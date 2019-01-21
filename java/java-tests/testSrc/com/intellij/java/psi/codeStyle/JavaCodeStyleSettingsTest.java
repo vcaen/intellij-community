@@ -25,6 +25,7 @@ import com.intellij.psi.codeStyle.*;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public class JavaCodeStyleSettingsTest extends CodeStyleTestCase {
@@ -42,10 +43,10 @@ public class JavaCodeStyleSettingsTest extends CodeStyleTestCase {
     assertEquals(annotations, copy.getRepeatAnnotations());
     assertEquals("Import tables do not match", original.getImportLayoutTable(), copy.getImportLayoutTable());
     assertEquals("On demand packages do not match", original.getPackagesToUseImportOnDemand(), copy.getPackagesToUseImportOnDemand());
-    assertEquals("Field type-to-name maps don not match", original.FIELD_TYPE_TO_NAME, copy.FIELD_TYPE_TO_NAME);
-    assertEquals("Static field type-to-name maps don not match", original.STATIC_FIELD_TYPE_TO_NAME, copy.STATIC_FIELD_TYPE_TO_NAME);
+    assertEquals("Field type-to-name maps do not match", original.FIELD_TYPE_TO_NAME, copy.FIELD_TYPE_TO_NAME);
+    assertEquals("Static field type-to-name maps do not match", original.STATIC_FIELD_TYPE_TO_NAME, copy.STATIC_FIELD_TYPE_TO_NAME);
 
-    copy.setRepeatAnnotations(Arrays.asList("anno1"));
+    copy.setRepeatAnnotations(Collections.singletonList("anno1"));
     assertNotSame("Changed repeated annotations should reflect the equality relation", original, copy);
   }
 
@@ -109,8 +110,8 @@ public class JavaCodeStyleSettingsTest extends CodeStyleTestCase {
       "align_subsequent_simple_methods = false\n" +
       "align_throws_keyword = false\n" +
       "annotation_parameter_wrap = off\n" +
-      "array_initializer_left_brace_on_next_line = false\n" +
-      "array_initializer_right_brace_on_next_line = false\n" +
+      "array_initializer_new_line_after_left_brace = false\n" +
+      "array_initializer_right_brace_on_new_line = false\n" +
       "array_initializer_wrap = off\n" +
       "assert_statement_colon_on_next_line = false\n" +
       "assert_statement_wrap = off\n" +
@@ -133,8 +134,8 @@ public class JavaCodeStyleSettingsTest extends CodeStyleTestCase {
       "blank_lines_before_package = 0\n" +
       "block_comment_at_first_column = true\n" +
       "brace_style = end_of_line\n" +
-      "call_parameters_left_paren_on_next_line = false\n" +
-      "call_parameters_right_paren_on_next_line = false\n" +
+      "call_parameters_new_line_after_left_paren = false\n" +
+      "call_parameters_right_paren_on_new_line = false\n" +
       "call_parameters_wrap = on_every_item\n" +
       "case_statement_on_new_line = true\n" +
       "catch_on_new_line = false\n" +
@@ -146,16 +147,34 @@ public class JavaCodeStyleSettingsTest extends CodeStyleTestCase {
       "do_not_indent_top_level_class_members = false\n" +
       "do_not_wrap_after_single_annotation = false\n" +
       "do_while_brace_force = never\n" +
+      "doc_add_blank_line_after_description = true\n" +
+      "doc_add_blank_line_after_param_comments = false\n" +
+      "doc_add_blank_line_after_return = false\n" +
+      "doc_add_p_tag_on_empty_lines = true\n" +
+      "doc_align_exception_comments = true\n" +
+      "doc_align_param_comments = true\n" +
+      "doc_do_not_wrap_if_one_line = false\n" +
+      "doc_enable_formatting = true\n" +
+      "doc_enable_leading_asterisks = true\n" +
+      "doc_indent_on_continuation = false\n" +
+      "doc_keep_empty_lines = true\n" +
+      "doc_keep_empty_parameter_tag = true\n" +
+      "doc_keep_empty_return_tag = true\n" +
+      "doc_keep_empty_throws_tag = true\n" +
+      "doc_keep_invalid_tags = true\n" +
+      "doc_param_description_on_new_line = false\n" +
+      "doc_preserve_line_breaks = false\n" +
+      "doc_use_throws_not_exception_tag = true\n" +
       "else_on_new_line = false\n" +
-      "enable_javadoc_formatting = true\n" +
       "enum_constants_wrap = off\n" +
       "extends_keyword_wrap = off\n" +
       "extends_list_wrap = off\n" +
       "field_annotation_wrap = split_into_lines\n" +
+      "field_name_prefix = m_\n" +
       "finally_on_new_line = false\n" +
       "for_brace_force = never\n" +
-      "for_statement_left_paren_on_next_line = false\n" +
-      "for_statement_right_paren_on_next_line = false\n" +
+      "for_statement_new_line_after_left_paren = false\n" +
+      "for_statement_right_paren_on_new_line = false\n" +
       "for_statement_wrap = off\n" +
       "generate_final_locals = false\n" +
       "generate_final_parameters = false\n" +
@@ -165,23 +184,6 @@ public class JavaCodeStyleSettingsTest extends CodeStyleTestCase {
       "indent_style = space\n" +
       "insert_inner_class_imports = false\n" +
       "insert_override_annotation = true\n" +
-      "javadoc_add_blank_after_description = true\n" +
-      "javadoc_add_blank_after_param_comments = false\n" +
-      "javadoc_add_blank_after_return = false\n" +
-      "javadoc_align_exception_comments = true\n" +
-      "javadoc_align_param_comments = true\n" +
-      "javadoc_do_not_wrap_one_line_comments = false\n" +
-      "javadoc_indent_on_continuation = false\n" +
-      "javadoc_keep_empty_exception = true\n" +
-      "javadoc_keep_empty_lines = true\n" +
-      "javadoc_keep_empty_parameter = true\n" +
-      "javadoc_keep_empty_return = true\n" +
-      "javadoc_keep_invalid_tags = true\n" +
-      "javadoc_leading_asterisks_are_enabled = true\n" +
-      "javadoc_p_at_empty_lines = true\n" +
-      "javadoc_param_description_on_new_line = false\n" +
-      "javadoc_preserve_line_feeds = false\n" +
-      "javadoc_use_throws_not_exception = true\n" +
       "keep_blank_lines_before_right_brace = 2\n" +
       "keep_blank_lines_between_package_declaration_and_header = 2\n" +
       "keep_blank_lines_in_code = 2\n" +
@@ -202,22 +204,22 @@ public class JavaCodeStyleSettingsTest extends CodeStyleTestCase {
       "method_annotation_wrap = split_into_lines\n" +
       "method_brace_style = end_of_line\n" +
       "method_call_chain_wrap = off\n" +
-      "method_parameters_left_paren_on_next_line = false\n" +
-      "method_parameters_right_paren_on_next_line = false\n" +
+      "method_parameters_new_line_after_left_paren = false\n" +
+      "method_parameters_right_paren_on_new_line = false\n" +
       "method_parameters_wrap = normal\n" +
       "modifier_list_wrap = false\n" +
       "names_count_to_use_import_on_demand = 3\n" +
       "parameter_annotation_wrap = off\n" +
-      "parentheses_expression_left_paren_wrap = false\n" +
-      "parentheses_expression_right_paren_wrap = false\n" +
+      "parentheses_expression_new_line_after_left_paren = false\n" +
+      "parentheses_expression_right_paren_on_new_line = false\n" +
       "place_assignment_sign_on_next_line = false\n" +
       "prefer_longer_names = true\n" +
       "prefer_parameters_wrap = false\n" +
       "repeat_synchronized = true\n" +
-      "replace_instance_of = false\n" +
+      "replace_instanceof_and_cast = false\n" +
       "replace_null_check = true\n" +
-      "resource_list_left_paren_on_next_line = false\n" +
-      "resource_list_right_paren_on_next_line = false\n" +
+      "resource_list_new_line_after_left_paren = false\n" +
+      "resource_list_right_paren_on_new_line = false\n" +
       "resource_list_wrap = off\n" +
       "smart_tabs = false\n" +
       "space_after_closing_angle_bracket_in_type_argument = false\n" +
@@ -295,6 +297,7 @@ public class JavaCodeStyleSettingsTest extends CodeStyleTestCase {
       "spaces_within_try_parentheses = false\n" +
       "spaces_within_while_parentheses = false\n" +
       "special_else_if_treatment = true\n" +
+      "static_field_name_suffix = _s\n" +
       "subclass_name_suffix = Impl\n" +
       "tab_width = 4\n" +
       "ternary_operation_signs_on_next_line = false\n" +

@@ -13,7 +13,6 @@
          <p>Numerous plugins depend on the Git Integration plugin.</p>
       ]]>
    </description>
-  <version>8.1</version>
   <category>VCS Integration</category>
   <vendor>JetBrains</vendor>
 
@@ -84,7 +83,8 @@
     <group id="GitRepositoryActions">
       <action id="Git.Branches" class="git4idea.ui.branch.GitBranchesAction" text="_Branches..." icon="AllIcons.Vcs.Branch">
         <keyboard-shortcut first-keystroke="control shift BACK_QUOTE" keymap="$default" />
-        <keyboard-shortcut first-keystroke="control shift BACK_QUOTE" keymap="Mac OS X" remove="true" />
+        <keyboard-shortcut first-keystroke="meta shift BACK_QUOTE" keymap="Mac OS X" remove="true" />
+        <keyboard-shortcut first-keystroke="meta shift BACK_QUOTE" keymap="Mac OS X 10.5+" remove="true" />
       </action>
       <action id="Git.Tag" class="git4idea.actions.GitTag" text="Tag..."/>
       <action id="Git.Merge" class="git4idea.actions.GitMerge" text="Merge Changes..." icon="AllIcons.Actions.ShowAsTree"/>
@@ -170,6 +170,7 @@
     <checkoutProvider implementation="git4idea.checkout.GitCheckoutProvider"/>
     <vcs.checkoutProcessor implementation="git4idea.checkout.GitCheckoutProcessor"/>
     <vcsRootChecker implementation="git4idea.roots.GitRootChecker"/>
+    <vcsIgnoreChecker implementation="git4idea.ignore.GitIgnoreChecker"/>
     <vcsRepositoryCreator implementation="git4idea.repo.GitRepositoryCreator"/>
     <vcsPopupProvider implementation="git4idea.actions.GitQuickListContentProvider"/>
     <vcsCheckinHandlerFactory implementation="git4idea.checkin.GitCheckinHandlerFactory"/>
@@ -184,11 +185,12 @@
     <vcsAnnotationGutterActionProvider implementation="git4idea.actions.GitToggleAnnotationOptionsActionProvider" />
     <vcsAnnotationGutterActionProvider implementation="git4idea.actions.GitShowCommitInLogAnnotationGutterActionProvider" />
     <statistics.projectUsagesCollector implementation="git4idea.GitStatisticsCollector"/>
-    <statistics.projectUsagesCollector implementation="git4idea.GitUsagesTriggerCollector"/>
     <statistics.projectUsagesCollector implementation="git4idea.GitProjectMigrationStatisticsCollector"/>
     <vcsRepositoryInitializer implementation="git4idea.repo.GitRepositoryInitializer"/>
     <openapi.vcs.changes.actions.diff.ChangeDiffRequestProvider
         implementation="git4idea.diff.GitSubmoduleDiffRequestProvider"/>
+    <vcsChangesViewRefresher implementation="git4idea.ignore.GitIgnoredFilesHolder$Provider"/>
+    <vcs.ignoredFilesHolder implementation="git4idea.ignore.GitIgnoredFilesHolder$Provider"/>
 
     <projectService serviceImplementation="git4idea.repo.GitRepositoryManager"/>
     <projectService serviceImplementation="git4idea.ui.branch.GitBranchManager"/>
@@ -257,6 +259,8 @@
     <logHighlighterFactory implementation="git4idea.branch.DeepComparator$Factory"/>
 
     <ignoredFileContentProvider implementation="git4idea.ignore.GitIgnoredFileContentProvider"/>
+    <openapi.vcs.changes.vcsPreservingExecutor implementation="git4idea.util.GitPreservingExecutor"/>
+    <actionPromoter implementation="git4idea.actions.GitActionPromoter"/>
   </extensions>
 
   <extensionPoints>

@@ -56,6 +56,7 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.SmartPointerManager;
 import com.intellij.psi.SmartPsiElementPointer;
 import com.intellij.psi.util.PsiModificationTracker;
+import com.intellij.reference.SoftReference;
 import com.intellij.ui.*;
 import com.intellij.ui.awt.RelativePoint;
 import com.intellij.ui.components.JBLayeredPane;
@@ -92,8 +93,8 @@ import java.awt.image.RenderedImage;
 import java.awt.image.renderable.RenderContext;
 import java.awt.image.renderable.RenderableImage;
 import java.awt.image.renderable.RenderableImageProducer;
-import java.io.IOException;
-import java.io.StringReader;
+import java.lang.ref.Reference;
+import java.lang.ref.WeakReference;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -133,6 +134,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
   private boolean myIgnoreFontSizeSliderChange;
   private String myExternalUrl;
   private DocumentationProvider myProvider;
+  private Reference<Component> myReferenceComponent;
 
   private final MyDictionary<String, Image> myImageProvider = new MyDictionary<String, Image>() {
     @Override
@@ -255,11 +257,6 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     myText = "";
     myDecoratedText = "";
     myEditorPane.setEditable(false);
-    myEditorPane.setCaret(new DefaultCaret() {
-      @Override
-      protected void adjustVisibility(Rectangle r) {
-      }
-    });
     if (ScreenReader.isActive()) {
       // Note: Making the caret visible is merely for convenience
       myEditorPane.getCaret().setVisible(true);
@@ -789,16 +786,27 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     if (element != null && element.isValid()) {
       pointer = SmartPointerManager.getInstance(element.getProject()).createSmartPsiElementPointer(element);
     }
-    setDataInternal(pointer, text, new Rectangle(0, 0), 0, ref);
+    setDataInternal(pointer, text, new Rectangle(0, 0), ref);
   }
 
   private void setDataInternal(@Nullable SmartPsiElementPointer element,
                                @NotNull String text,
                                @NotNull Rectangle viewRect,
-                               int caretPosition,
                                @Nullable String ref) {
     myIsEmpty = false;
     if (myManager == null) return;
+
+    String refToUse;
+    Rectangle viewRectToUse;
+    if (DocumentationManagerProtocol.KEEP_SCROLLING_POSITION_REF.equals(ref)) {
+      refToUse = null;
+      viewRectToUse = myScrollPane.getViewport().getViewRect();
+    }
+    else {
+      refToUse = ref;
+      viewRectToUse = viewRect;
+    }
+
     updateControlState();
 
     setElement(element);
@@ -806,32 +814,23 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     highlightLink(-1);
 
     myDecoratedText = decorate(text);
-    setTextFast(myEditorPane, myDecoratedText);
+    myEditorPane.setText(myDecoratedText);
     applyFontProps();
 
     showHint();
 
     myText = text;
 
-    myEditorPane.setCaretPosition(caretPosition);
-    myEditorPane.scrollRectToVisible(viewRect);
-    if (ref != null) {
-      myEditorPane.scrollToReference(ref);
-    }
-  }
-
-  private static void setTextFast(@NotNull JEditorPane editorPane, @NotNull String text) {
-    EditorKit kit = editorPane.getEditorKit();
-    Document document = editorPane.getDocument();
-    editorPane.setDocument(kit.createDefaultDocument());
-    try {
-      document.remove(0, document.getLength());
-      kit.read(new StringReader(text), document, 0);
-    }
-    catch (IOException | BadLocationException ignore) { }
-    finally {
-      editorPane.setDocument(document);
-    }
+    //noinspection SSBasedInspection
+    SwingUtilities.invokeLater(() -> {
+      myEditorPane.scrollRectToVisible(viewRectToUse); // if ref is defined but is not found in document, this provides a default location
+      if (refToUse != null) {
+        myEditorPane.scrollToReference(refToUse);
+      }
+      else if (ScreenReader.isActive()) {
+        myEditorPane.setCaretPosition(0);
+      }
+    });
   }
 
   private void showHint() {
@@ -839,8 +838,7 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
 
     setHintSize();
 
-    Component focusOwner = IdeFocusManager.getInstance(myManager.myProject).getFocusOwner();
-    DataContext dataContext = DataManager.getInstance().getDataContext(focusOwner);
+    DataContext dataContext = getDataContext();
     PopupPositionManager.positionPopupInBestPosition(myHint, myManager.getEditor(), dataContext,
                                                      PopupPositionManager.Position.RIGHT, PopupPositionManager.Position.LEFT);
 
@@ -850,6 +848,13 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     if (myHint.getDimensionServiceKey() == null) {
       registerSizeTracker();
     }
+  }
+
+  private DataContext getDataContext() {
+    Component referenceComponent = SoftReference.dereference(myReferenceComponent);
+    if (referenceComponent == null) referenceComponent = IdeFocusManager.getInstance(myManager.myProject).getFocusOwner();
+    if (myReferenceComponent == null) myReferenceComponent = new WeakReference<>(referenceComponent);
+    return DataManager.getInstance().getDataContext(referenceComponent);
   }
 
   private void setHintSize() {
@@ -1186,16 +1191,21 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
 
   private Context saveContext() {
     Rectangle rect = myScrollPane.getViewport().getViewRect();
-    return new Context(
-      myElement, myText, myExternalUrl, myProvider,
-      rect, myEditorPane.getCaretPosition(), myHighlightedLink);
+    return new Context(myElement, myText, myExternalUrl, myProvider, rect, myHighlightedLink);
   }
 
   private void restoreContext(@NotNull Context context) {
     myExternalUrl = context.externalUrl;
     myProvider = context.provider;
-    setDataInternal(context.element, context.text, context.viewRect, context.caretPosition, null);
+    setDataInternal(context.element, context.text, context.viewRect, null);
     highlightLink(context.highlightedLink);
+
+    if (myManager != null) {
+      PsiElement element  = context.element.getElement();
+      if (element != null) {
+        myManager.updateToolWindowTabName(element);
+      }
+    }
   }
 
   private void updateControlState() {
@@ -1505,7 +1515,6 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
     final String externalUrl;
     final DocumentationProvider provider;
     final Rectangle viewRect;
-    final int caretPosition;
     final int highlightedLink;
 
     Context(SmartPsiElementPointer element,
@@ -1513,21 +1522,18 @@ public class DocumentationComponent extends JPanel implements Disposable, DataPr
             String externalUrl,
             DocumentationProvider provider,
             Rectangle viewRect,
-            int caretPosition,
             int highlightedLink) {
       this.element = element;
       this.text = text;
       this.externalUrl = externalUrl;
       this.provider = provider;
       this.viewRect = viewRect;
-      this.caretPosition = caretPosition;
       this.highlightedLink = highlightedLink;
     }
 
     @NotNull
     Context withText(@NotNull String text) {
-      return new Context(element, text, externalUrl, provider,
-                         viewRect, caretPosition, highlightedLink);
+      return new Context(element, text, externalUrl, provider, viewRect, highlightedLink);
     }
   }
 

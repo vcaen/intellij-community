@@ -17,9 +17,7 @@ import com.intellij.openapi.util.Conditions;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.profile.codeInspection.InspectionProjectProfileManager;
 import com.intellij.psi.*;
-import com.intellij.psi.impl.light.LightElement;
 import com.intellij.psi.javadoc.PsiDocComment;
 import com.intellij.psi.javadoc.PsiDocTag;
 import com.intellij.psi.search.GlobalSearchScope;
@@ -45,8 +43,12 @@ import java.util.stream.Stream;
  * @author anna
  */
 public class RefJavaManagerImpl extends RefJavaManager {
-  private static final Condition<PsiElement> PROBLEM_ELEMENT_CONDITION = Conditions
-    .and(Conditions.instanceOf(PsiFile.class, PsiClass.class, PsiMethod.class, PsiField.class, PsiJavaModule.class), Conditions.notInstanceOf(PsiTypeParameter.class));
+  private static final Condition<PsiElement> PROBLEM_ELEMENT_CONDITION =
+    Conditions.or(Conditions.instanceOf(PsiFile.class, PsiJavaModule.class),
+                  Conditions.and(Conditions.notInstanceOf(PsiTypeParameter.class), psi -> {
+                    UDeclaration decl = UastContextKt.toUElement(psi, UDeclaration.class);
+                    return decl != null && (decl instanceof UField || !(decl instanceof UVariable)) && (!(decl instanceof UClassInitializer));
+                  }));
 
   private static final Logger LOG = Logger.getInstance(RefJavaManagerImpl.class);
   public static final String JAVAX_SERVLET_SERVLET = "javax.servlet.Servlet";
@@ -54,7 +56,6 @@ public class RefJavaManagerImpl extends RefJavaManager {
   private final PsiMethod myAppPremainPattern;
   private final PsiMethod myAppAgentmainPattern;
   private final PsiClass myApplet;
-  private final PsiClass myServlet;
   private volatile RefPackage myCachedDefaultPackage;  // cached value. benign race
   private Map<String, RefPackage> myPackages; // guarded by this
   private final RefManagerImpl myRefManager;
@@ -71,7 +72,6 @@ public class RefJavaManagerImpl extends RefJavaManager {
     myAppAgentmainPattern = factory.createMethodFromText("void agentmain(String[] args, java.lang.instrument.Instrumentation i);", null);
 
     myApplet = JavaPsiFacade.getInstance(project).findClass("java.applet.Applet", GlobalSearchScope.allScope(project));
-    myServlet = JavaPsiFacade.getInstance(project).findClass(JAVAX_SERVLET_SERVLET, GlobalSearchScope.allScope(project));
   }
 
   @Override
@@ -152,9 +152,7 @@ public class RefJavaManagerImpl extends RefJavaManager {
     else  {
       String singleTool = contextBase.getCurrentProfile().getSingleTool();
       if (singleTool != null && !UnusedDeclarationInspectionBase.SHORT_NAME.equals(singleTool)) {
-        InspectionProfileImpl currentProfile = InspectionProjectProfileManager.getInstance(myRefManager.getProject()).getCurrentProfile();
-        tools = currentProfile.getTools(UnusedDeclarationInspectionBase.SHORT_NAME, myRefManager.getProject());
-        toolWrapper = tools.getEnabledTool(file);
+        return UnusedDeclarationInspectionBase.findUnusedDeclarationInspection(file);
       }
       else {
         return null;
@@ -196,11 +194,6 @@ public class RefJavaManagerImpl extends RefJavaManager {
   @Override
   public String getAppletQName() {
     return myApplet.getQualifiedName();
-  }
-
-  @Override
-  public PsiClass getServlet() {
-    return myServlet;
   }
 
   @Override
@@ -275,18 +268,10 @@ public class RefJavaManagerImpl extends RefJavaManager {
       return new RefClassImpl((UClass)uElement, psi, myRefManager);
     }
     if (uElement instanceof UMethod) {
-      UMethod method = (UMethod)uElement;
-      final RefElement parentRef = findParentRef(psi, method);
-      if (parentRef != null) {
-        return new RefMethodImpl(parentRef, method, psi, myRefManager);
-      }
+      return new RefMethodImpl((UMethod)uElement, psi, myRefManager);
     }
     else if (uElement instanceof UField) {
-      final UField field = (UField)uElement;
-      final RefElement parentRef = findParentRef(psi, field);
-      if (parentRef != null) {
-        return new RefFieldImpl(parentRef, field, psi, myRefManager);
-      }
+      return new RefFieldImpl((UField)uElement, psi, myRefManager);
     }
     return null;
   }
@@ -609,22 +594,5 @@ public class RefJavaManagerImpl extends RefJavaManager {
         }
       }
     }
-  }
-
-  private RefElement findParentRef(@NotNull PsiElement psiElement, @NotNull UElement uElement) {
-    UDeclaration containingUDecl = UDeclarationKt.getContainingDeclaration(uElement);
-    PsiElement containingDeclaration = containingUDecl == null ? null : containingUDecl.getSourcePsi();
-    if (containingDeclaration instanceof LightElement) {
-      containingDeclaration = containingDeclaration.getNavigationElement();
-    }
-    final RefElement parentRef;
-    //TODO strange
-    if (containingDeclaration == null || containingDeclaration instanceof LightElement) {
-      parentRef = myRefManager.getReference(psiElement.getContainingFile(), true);
-    }
-    else {
-      parentRef = myRefManager.getReference(containingDeclaration, true);
-    }
-    return parentRef;
   }
 }

@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.execution.impl
 
 import com.intellij.ProjectTopics
@@ -41,25 +41,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import javax.swing.Icon
-import kotlin.collections.Collection
-import kotlin.collections.List
-import kotlin.collections.Map
-import kotlin.collections.MutableList
-import kotlin.collections.MutableMap
-import kotlin.collections.any
 import kotlin.collections.component1
 import kotlin.collections.component2
-import kotlin.collections.count
-import kotlin.collections.emptyList
-import kotlin.collections.firstOrNull
-import kotlin.collections.forEach
-import kotlin.collections.get
-import kotlin.collections.getOrPut
-import kotlin.collections.iterator
-import kotlin.collections.listOf
-import kotlin.collections.mapNotNull
-import kotlin.collections.toList
-import kotlin.collections.toMutableList
 import kotlin.concurrent.read
 import kotlin.concurrent.write
 
@@ -296,9 +279,11 @@ open class RunManagerImpl @JvmOverloads constructor(val project: Project, shared
   }
 
   override fun getConfigurationTemplate(factory: ConfigurationFactory): RunnerAndConfigurationSettingsImpl {
-    for (provider in RUN_CONFIGURATION_TEMPLATE_PROVIDER_EP.getExtensions(project)) {
-      provider.getRunConfigurationTemplate(factory, this)?.let {
-        return it
+    if (!project.isDefault) {
+      for (provider in RUN_CONFIGURATION_TEMPLATE_PROVIDER_EP.getExtensions(project)) {
+        provider.getRunConfigurationTemplate(factory, this)?.let {
+          return it
+        }
       }
     }
 
@@ -771,10 +756,18 @@ open class RunManagerImpl @JvmOverloads constructor(val project: Project, shared
       // do not register unknown RC type templates (it is saved in any case in the scheme manager, so, not lost on save)
       if (factory !== UnknownConfigurationType.getInstance()) {
         val key = getFactoryKey(factory)
-        lock.write {
-          val old = templateIdToConfiguration.put(key, settings)
-          if (old != null) {
-            LOG.error("Template $key already registered, old: $old, new: $settings")
+        val old = lock.write {
+          templateIdToConfiguration.put(key, settings)
+        }
+
+        if (old != null) {
+          val message = "Template $key already registered, old: $old, new: $settings"
+          // https://youtrack.jetbrains.com/issue/IDEA-205510
+          if (old.configuration.id == "AndroidRunConfigurationType") {
+            LOG.warn(message)
+          }
+          else {
+            LOG.error(message)
           }
         }
       }
@@ -1076,6 +1069,19 @@ open class RunManagerImpl @JvmOverloads constructor(val project: Project, shared
       throw IllegalStateException("test only")
     }
     return templateIdToConfiguration
+  }
+
+  fun copyTemplatesToProjectFromTemplate(project: Project) {
+    if (workspaceSchemeManager.isEmpty) {
+      return
+    }
+
+    val otherRunManager = RunManagerImpl.getInstanceImpl(project)
+    workspaceSchemeManagerProvider.copyIfNotExists(otherRunManager.workspaceSchemeManagerProvider)
+    otherRunManager.lock.write {
+      otherRunManager.templateIdToConfiguration.clear()
+    }
+    otherRunManager.workspaceSchemeManager.reload()
   }
 }
 

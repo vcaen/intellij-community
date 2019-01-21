@@ -2,31 +2,38 @@
 package com.intellij.psi.impl.source.codeStyle.json;
 
 import com.google.gson.*;
+import com.google.gson.annotations.Expose;
 import com.intellij.application.options.codeStyle.properties.AbstractCodeStylePropertyMapper;
+import com.intellij.application.options.codeStyle.properties.CodeStylePropertiesUtil;
 import com.intellij.application.options.codeStyle.properties.GeneralCodeStylePropertyMapper;
+import com.intellij.application.options.codeStyle.properties.LanguageCodeStylePropertyMapper;
+import com.intellij.lang.Language;
 import com.intellij.openapi.options.SchemeExporter;
 import com.intellij.psi.codeStyle.CodeStyleScheme;
 import com.intellij.psi.codeStyle.CodeStyleSettings;
+import com.intellij.psi.codeStyle.DisplayPriority;
 import com.intellij.psi.codeStyle.LanguageCodeStyleSettingsProvider;
-import com.intellij.util.ObjectUtils;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.TestOnly;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.lang.reflect.Type;
-import java.util.*;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 
 public class CodeStyleSchemeJsonExporter extends SchemeExporter<CodeStyleScheme> {
 
   public static final String CODE_STYLE_JSON_EXT = "codestyle.json";
-  public static final String COMMON_OPTIONS = "All";
-
-  private static final Set<String> myLanguagesToExport = ContainerUtil.newHashSet();
 
   @Override
   public void exportScheme(@NotNull CodeStyleScheme scheme, @NotNull OutputStream outputStream) {
+    exportScheme(scheme, outputStream, null);
+  }
+
+  public void exportScheme(@NotNull CodeStyleScheme scheme, @NotNull OutputStream outputStream, @Nullable List<String> languageNames) {
     GsonBuilder builder = new GsonBuilder();
     builder.setPrettyPrinting();
     builder.registerTypeHierarchyAdapter(AbstractCodeStylePropertyMapper.class, new JsonSerializer<AbstractCodeStylePropertyMapper>() {
@@ -42,31 +49,10 @@ public class CodeStyleSchemeJsonExporter extends SchemeExporter<CodeStyleScheme>
       }
     });
     Gson gson = builder.create();
-    String json = gson.toJson(getOptions(scheme));
+    String json = gson.toJson(getOptionDescriptors(scheme.getCodeStyleSettings(), languageNames));
     try (PrintWriter writer = new PrintWriter(outputStream)) {
       writer.write(json);
     }
-  }
-
-  @TestOnly
-  public CodeStyleSchemeJsonExporter filter(@NotNull String... languages) {
-    myLanguagesToExport.addAll(Arrays.asList(languages));
-    return this;
-  }
-
-  private static List<LanguageOptions> getOptions(@NotNull CodeStyleScheme scheme) {
-    List<LanguageOptions> options = ContainerUtil.newArrayList();
-    final CodeStyleSettings codeStyleSettings = scheme.getCodeStyleSettings();
-    for (LanguageCodeStyleSettingsProvider provider : LanguageCodeStyleSettingsProvider.EP_NAME.getExtensionList()) {
-      final String languageName = provider.getLanguage().getDisplayName();
-      if (myLanguagesToExport.isEmpty() || myLanguagesToExport.contains(languageName)) {
-        options.add(new LanguageOptions(ObjectUtils.notNull(provider.getLanguageName(), languageName),
-                                        provider.getPropertyMapper(codeStyleSettings)));
-      }
-    }
-    Collections.sort(options, Comparator.comparing(o -> o.language));
-    options.add(0, new LanguageOptions(COMMON_OPTIONS, new GeneralCodeStylePropertyMapper(codeStyleSettings)));
-    return options;
   }
 
   @Override
@@ -74,13 +60,53 @@ public class CodeStyleSchemeJsonExporter extends SchemeExporter<CodeStyleScheme>
     return CODE_STYLE_JSON_EXT;
   }
 
-  private static class LanguageOptions {
+
+  private static List<LanguagePropertyMapperDescriptor> getOptionDescriptors(@NotNull CodeStyleSettings settings,
+                                                                             @Nullable List<String> languageDomainIds) {
+    List<LanguagePropertyMapperDescriptor> descriptors = ContainerUtil.newArrayList();
+    CodeStylePropertiesUtil.collectMappers(settings, mapper -> {
+      if (languageDomainIds == null || languageDomainIds.contains(mapper.getLanguageDomainId())) {
+        descriptors.add(new LanguagePropertyMapperDescriptor(mapper.getLanguageDomainId(), mapper, getPriority(mapper)));
+      }
+    });
+    Collections.sort(descriptors);
+    return descriptors;
+  }
+
+  private static DisplayPriority getPriority(@NotNull AbstractCodeStylePropertyMapper mapper) {
+    if (mapper instanceof GeneralCodeStylePropertyMapper) {
+      return DisplayPriority.GENERAL_SETTINGS;
+    }
+    else if (mapper instanceof LanguageCodeStylePropertyMapper) {
+      Language language = ((LanguageCodeStylePropertyMapper)mapper).getLanguage();
+      LanguageCodeStyleSettingsProvider provider = LanguageCodeStyleSettingsProvider.forLanguage(language);
+      if (provider != null) {
+        return provider.getDisplayPriority();
+      }
+    }
+    return DisplayPriority.OTHER_SETTINGS;
+  }
+
+  private static class LanguagePropertyMapperDescriptor implements Comparable<LanguagePropertyMapperDescriptor> {
     final @NotNull String language;
     final @NotNull AbstractCodeStylePropertyMapper options;
+    private final transient @NotNull DisplayPriority priority;
 
-    private LanguageOptions(@NotNull String language, @NotNull AbstractCodeStylePropertyMapper mapper) {
+    private LanguagePropertyMapperDescriptor(@NotNull String language,
+                                             @NotNull AbstractCodeStylePropertyMapper mapper,
+                                             @NotNull DisplayPriority priority) {
       this.language = language;
       this.options = mapper;
+      this.priority = priority;
+    }
+
+    @Override
+    public int compareTo(@NotNull LanguagePropertyMapperDescriptor d) {
+      int result = this.priority.compareTo(d.priority);
+      if (result == 0) {
+        result = this.language.compareTo(d.language);
+      }
+      return result;
     }
   }
 }

@@ -16,6 +16,7 @@
 package com.siyeh.ig.psiutils;
 
 import com.intellij.codeInsight.Nullability;
+import com.intellij.codeInsight.daemon.impl.analysis.HighlightUtil;
 import com.intellij.codeInspection.dataFlow.NullabilityUtil;
 import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.*;
@@ -142,8 +143,8 @@ public class SwitchUtils {
    * @return true if given switch block has a rule-based format; false if it has conventional label-based format (like 'case 0:')
    * If switch body has no labels yet and language level permits, rule-based format is assumed.
    */
-  public static boolean isRuleFormatSwitch(PsiSwitchBlock block) {
-    if (PsiUtil.getLanguageLevel(block).isLessThan(LanguageLevel.JDK_12_PREVIEW)) {
+  public static boolean isRuleFormatSwitch(@NotNull PsiSwitchBlock block) {
+    if (!HighlightUtil.Feature.ENHANCED_SWITCH.isAvailable(block)) {
       return false;
     }
     PsiSwitchLabelStatementBase label = PsiTreeUtil.getChildOfType(block.getBody(), PsiSwitchLabelStatementBase.class);
@@ -229,7 +230,15 @@ public class SwitchUtils {
     }
     final PsiExpression left = check.getLeft();
     final PsiExpression right = check.getRight();
-    return PsiUtil.isConstantExpression(left) ? right : left;
+    if (PsiUtil.isConstantExpression(left)) {
+      return right;
+    }
+    else if (PsiUtil.isConstantExpression(right)) {
+      return left;
+    }
+    else {
+      return null;
+    }
   }
 
   private static boolean canBeCaseLabel(PsiExpression expression, LanguageLevel languageLevel) {
@@ -272,17 +281,16 @@ public class SwitchUtils {
   }
 
   /**
-   * @param element a switch label element
+   * @param label a switch label statement
    * @return list of enum constants which are targets of the specified label; empty list if the supplied element is not a switch label,
    * or it is not an enum switch.
    */
   @NotNull
-  public static List<PsiEnumConstant> findEnumConstants(PsiElement element) {
-    if (!(element instanceof PsiSwitchLabelStatementBase)) {
+  public static List<PsiEnumConstant> findEnumConstants(PsiSwitchLabelStatementBase label) {
+    if (label == null) {
       return Collections.emptyList();
     }
-    final PsiSwitchLabelStatementBase switchLabelStatement = (PsiSwitchLabelStatementBase)element;
-    final PsiExpressionList list = switchLabelStatement.getCaseValues();
+    final PsiExpressionList list = label.getCaseValues();
     if (list == null) {
       return Collections.emptyList();
     }

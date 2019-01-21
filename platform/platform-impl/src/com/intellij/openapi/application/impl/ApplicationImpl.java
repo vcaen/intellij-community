@@ -1,9 +1,10 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.application.impl;
 
 import com.intellij.BundleBase;
 import com.intellij.CommonBundle;
 import com.intellij.concurrency.JobScheduler;
+import com.intellij.configurationStore.StoreUtil;
 import com.intellij.diagnostic.PerformanceWatcher;
 import com.intellij.diagnostic.ThreadDumper;
 import com.intellij.execution.process.ProcessIOExecutorService;
@@ -14,7 +15,6 @@ import com.intellij.idea.IdeaApplication;
 import com.intellij.idea.Main;
 import com.intellij.idea.StartupUtil;
 import com.intellij.internal.statistic.eventLog.FeatureUsageLogger;
-import com.intellij.internal.statistic.service.fus.collectors.FUSApplicationUsageTrigger;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.application.*;
@@ -24,7 +24,6 @@ import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.components.ServiceKt;
 import com.intellij.openapi.components.impl.PlatformComponentManagerImpl;
 import com.intellij.openapi.components.impl.ServiceManagerImpl;
-import com.intellij.openapi.components.impl.stores.StoreUtil;
 import com.intellij.openapi.diagnostic.Attachment;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.diagnostic.RuntimeExceptionWithAttachments;
@@ -81,7 +80,10 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static com.intellij.featureStatistics.fusCollectors.AppLifecycleUsageTriggerCollector.LIFECYCLE_APP;
+
 public class ApplicationImpl extends PlatformComponentManagerImpl implements ApplicationEx {
+  // do not use PluginManager.processException() because it can force app to exit, but we want just log error and continue
   private static final Logger LOG = Logger.getInstance("#com.intellij.application.impl.ApplicationImpl");
 
   final ReadMostlyRWLock myLock;
@@ -111,7 +113,6 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
 
   private final Disposable myLastDisposable = Disposer.newDisposable(); // will be disposed last
 
-  private final AtomicBoolean mySaveSettingsIsInProgress = new AtomicBoolean(false);
   private static final int ourDumpThreadsOnLongWriteActionWaiting = Integer.getInteger("dump.threads.on.long.write.action.waiting", 0);
 
   private final ExecutorService ourThreadExecutorsService = PooledThreadExecutor.INSTANCE;
@@ -131,8 +132,9 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
     getPicoContainer().registerComponentInstance(Application.class, this);
     getPicoContainer().registerComponentInstance(TransactionGuard.class.getName(), myTransactionGuard);
 
-    //noinspection AssignmentToStaticFieldFromInstanceMethod
-    IconLoader.setStrictGlobally(BundleBase.assertKeyIsFound = isUnitTestMode || isInternal);
+    boolean strictMode = isUnitTestMode || isInternal;
+    BundleBase.assertOnMissedKeys(strictMode);
+    IconLoader.setStrictGlobally(strictMode);
 
     AWTExceptionHandler.register(); // do not crash AWT on exceptions
 
@@ -316,8 +318,8 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
         catch (ProcessCanceledException e) {
           // ignore
         }
-        catch (Throwable t) {
-          LOG.error(t);
+        catch (Throwable e) {
+          LOG.error(e);
         }
         finally {
           Thread.interrupted(); // reset interrupted status
@@ -339,8 +341,8 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
         catch (ProcessCanceledException e) {
           // ignore
         }
-        catch (Throwable t) {
-          LOG.error(t);
+        catch (Throwable e) {
+          LOG.error(e);
         }
         finally {
           Thread.interrupted(); // reset interrupted status
@@ -809,11 +811,11 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
 
       lifecycleListener.appWillBeClosed(restart);
 
-      FUSApplicationUsageTrigger.getInstance().trigger(AppLifecycleUsageTriggerCollector.class, "ide.close");
+      FeatureUsageLogger.INSTANCE.log(LIFECYCLE_APP, "ide.close");
       if (restart) {
-        FUSApplicationUsageTrigger.getInstance().trigger(AppLifecycleUsageTriggerCollector.class, "ide.close.restart");
+        FeatureUsageLogger.INSTANCE.log(LIFECYCLE_APP, "ide.close.restart");
       }
-      FeatureUsageLogger.INSTANCE.log("lifecycle", "app.closed", Collections.singletonMap("restart", restart));
+      FeatureUsageLogger.INSTANCE.log(AppLifecycleUsageTriggerCollector.LIFECYCLE, "app.closed", Collections.singletonMap("restart", restart));
 
       boolean success = disposeSelf(!force);
       if (!success || isUnitTestMode() || Boolean.getBoolean("idea.test.guimode")) {
@@ -1407,7 +1409,6 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
   private void fireApplicationExiting() {
     myDispatcher.getMulticaster().applicationExiting();
   }
-
   private void fireBeforeWriteActionStart(@NotNull Class action) {
     myDispatcher.getMulticaster().beforeWriteActionStart(action);
   }
@@ -1429,18 +1430,9 @@ public class ApplicationImpl extends PlatformComponentManagerImpl implements App
     saveSettings(false);
   }
 
-  @Override
-  public void saveSettings(boolean isForce) {
-    if (!mySaveAllowed || !mySaveSettingsIsInProgress.compareAndSet(false, true)) {
-      return;
-    }
-
-    HeavyProcessLatch.INSTANCE.prioritizeUiActivity();
-    try {
-      StoreUtil.save(ServiceKt.getStateStore(this), null, isForce);
-    }
-    finally {
-      mySaveSettingsIsInProgress.set(false);
+  private void saveSettings(boolean isForceSavingAllSettings) {
+    if (mySaveAllowed) {
+      StoreUtil.saveSettings(this, isForceSavingAllSettings);
     }
   }
 

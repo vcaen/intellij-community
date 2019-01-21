@@ -332,7 +332,12 @@ public class GrReferenceExpressionImpl extends GrReferenceElementImpl<GrExpressi
       }
     }
     if (!TypeConversionUtil.isAssignable(TypeConversionUtil.erasure(nominal), inferred, false)) {
-      if (resolved instanceof GrVariable && ((GrVariable)resolved).getTypeElementGroovy() != null) {
+      if (resolved instanceof GrVariable) {
+        if (((GrVariable)resolved).getTypeElementGroovy() != null) {
+          return nominal;
+        }
+      }
+      else if (resolved instanceof PsiVariable) {
         return nominal;
       }
     }
@@ -342,7 +347,7 @@ public class GrReferenceExpressionImpl extends GrReferenceElementImpl<GrExpressi
   @Nullable
   private static PsiType getInferredTypes(@NotNull GrReferenceExpressionImpl refExpr, @Nullable PsiElement resolved) {
     final GrExpression qualifier = refExpr.getQualifier();
-    if (qualifier != null || resolved instanceof PsiClass || resolved instanceof PsiPackage) {
+    if (qualifier != null || resolved instanceof PsiClass || resolved instanceof PsiPackage || resolved instanceof PsiEnumConstant) {
       return null;
     }
     return TypeInferenceHelper.getCurrentContext().getVariableType(refExpr);

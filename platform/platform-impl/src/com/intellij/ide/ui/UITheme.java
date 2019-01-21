@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.ide.ui;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -6,11 +6,13 @@ import com.intellij.ide.plugins.cl.PluginClassLoader;
 import com.intellij.openapi.util.IconLoader;
 import com.intellij.openapi.util.IconPathPatcher;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.ColorUtil;
 import com.intellij.util.SVGLoader;
 import com.intellij.util.ui.JBDimension;
 import com.intellij.util.ui.JBInsets;
 import com.intellij.util.ui.UIUtil;
+import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.w3c.dom.Element;
@@ -35,6 +37,7 @@ import static com.intellij.util.ui.JBUI.asUIResource;
  * @author Konstantin Bulenkov
  */
 public class UITheme {
+  public static final String FILE_EXT_ENDING = ".theme.json";
   private String name;
   private boolean dark;
   private String author;
@@ -63,10 +66,12 @@ public class UITheme {
     return author;
   }
 
-  public static UITheme loadFromJson(InputStream stream, @NotNull String themeId, @NotNull ClassLoader provider) throws IOException {
+  public static UITheme loadFromJson(InputStream stream, @NotNull String themeId, @Nullable ClassLoader provider) throws IOException {
     UITheme theme = new ObjectMapper().readValue(stream, UITheme.class);
     theme.id = themeId;
-    theme.providerClassLoader = provider;
+    if (provider != null) {
+      theme.providerClassLoader = provider;
+    }
     if (theme.icons != null && !theme.icons.isEmpty()) {
       theme.patcher = new IconPathPatcher() {
         @Nullable
@@ -383,6 +388,11 @@ public class UITheme {
 
   public void setEditorSchemeName(String editorSchemeName) {
     this.editorSchemeName = editorSchemeName;
+  }
+
+  @Contract("null -> false")
+  public static boolean isThemeFile(@Nullable VirtualFile file) {
+    return file != null && StringUtil.endsWithIgnoreCase(file.getName(), FILE_EXT_ENDING);
   }
 
   //

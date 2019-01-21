@@ -1,6 +1,7 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.testFramework;
 
+import com.intellij.configurationStore.StateStorageManagerKt;
 import com.intellij.execution.ExecutionException;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.execution.process.ProcessIOExecutorService;
@@ -21,8 +22,6 @@ import com.intellij.openapi.application.Application;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.application.impl.ApplicationImpl;
 import com.intellij.openapi.application.impl.LaterInvocator;
-import com.intellij.openapi.components.ServiceKt;
-import com.intellij.openapi.components.impl.stores.StoreUtil;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.extensions.ExtensionPoint;
 import com.intellij.openapi.extensions.ExtensionPointName;
@@ -406,17 +405,22 @@ public class PlatformTestUtil {
   }
 
   /**
-   * Dispatch all pending invocation events (if any) in the {@link IdeEventQueue}.
+   * Dispatch all pending invocation events (if any) in the {@link IdeEventQueue}, ignores and removes all other events from the queue.
    * Should only be invoked in Swing thread (asserted inside {@link IdeEventQueue#dispatchEvent(AWTEvent)})
    */
-  public static void dispatchAllInvocationEventsInIdeEventQueue() throws InterruptedException {
+  public static void dispatchAllInvocationEventsInIdeEventQueue() {
     IdeEventQueue eventQueue = IdeEventQueue.getInstance();
     while (true) {
       AWTEvent event = eventQueue.peekEvent();
       if (event == null) break;
-      AWTEvent event1 = eventQueue.getNextEvent();
-      if (event1 instanceof InvocationEvent) {
-        eventQueue.dispatchEvent(event1);
+      try {
+        event = eventQueue.getNextEvent();
+        if (event instanceof InvocationEvent) {
+          eventQueue.dispatchEvent(event);
+        }
+      }
+      catch (InterruptedException e) {
+        throw new RuntimeException(e);
       }
     }
   }
@@ -595,13 +599,19 @@ public class PlatformTestUtil {
     }
   }
 
+  public static void forceCloseProjectWithoutSaving(@NotNull Project project) {
+    ProjectManagerEx.getInstanceEx().forceCloseProject(project, false /* do not dispose */);
+    // explicitly dispose because `dispose` option for forceCloseProject doesn't work todo why?
+    getApplication().runWriteAction(() -> Disposer.dispose(project));
+  }
+
   public static void saveProject(@NotNull Project project) {
     saveProject(project, false);
   }
 
-  public static void saveProject(@NotNull Project project, boolean isForce) {
+  public static void saveProject(@NotNull Project project, boolean isForceSavingAllSettings) {
     ProjectManagerEx.getInstanceEx().flushChangedProjectFileAlarm();
-    StoreUtil.save(ServiceKt.getStateStore(project), project, isForce);
+    StateStorageManagerKt.saveComponentManager(project, isForceSavingAllSettings);
   }
 
   static void waitForAllBackgroundActivityToCalmDown() {

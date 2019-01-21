@@ -1,12 +1,10 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.configurationStore
 
 import com.intellij.openapi.components.PersistentStateComponent
-import com.intellij.openapi.components.StateStorage
 import com.intellij.openapi.components.StoragePathMacros
 import com.intellij.openapi.components.impl.ComponentManagerImpl
 import com.intellij.openapi.components.impl.ServiceManagerImpl
-import com.intellij.openapi.components.impl.stores.StoreUtil
 import com.intellij.openapi.diagnostic.runAndLogException
 import com.intellij.openapi.module.impl.ModuleManagerImpl
 import com.intellij.openapi.project.Project
@@ -23,53 +21,54 @@ import java.nio.file.Path
 
 internal fun normalizeDefaultProjectElement(defaultProject: Project, element: Element, projectConfigDir: Path) {
   LOG.runAndLogException {
-    moveComponentConfiguration(defaultProject, element) { projectConfigDir.resolve(it)}
+    moveComponentConfiguration(defaultProject, element) { projectConfigDir.resolve(it) }
   }
 
-  LOG.runAndLogException {
-    val iterator = element.getChildren("component").iterator()
-    for (component in iterator) {
-      val componentName = component.getAttributeValue("name")
+  val iterator = element.getChildren("component").iterator()
+  for (component in iterator) {
+    val componentName = component.getAttributeValue("name")
 
-      fun writeProfileSettings(schemeDir: Path) {
-        component.removeAttribute("name")
-        if (!component.isEmpty()) {
-          val wrapper = Element("component").setAttribute("name", componentName)
-          component.name = "settings"
-          wrapper.addContent(component)
-
-          val file = schemeDir.resolve("profiles_settings.xml")
-          if (file.fileSystem == FileSystems.getDefault()) {
-            // VFS must be used to write workspace.xml and misc.xml to ensure that project files will be not reloaded on external file change event
-            writeFile(file, fakeSaveSession, null, createDataWriterForElement(wrapper, "default project"), LineSeparator.LF, prependXmlProlog = false)
-          }
-          else {
-            file.outputStream().use {
-              wrapper.write(it)
-            }
-          }
-        }
+    fun writeProfileSettings(schemeDir: Path) {
+      component.removeAttribute("name")
+      if (component.isEmpty()) {
+        return
       }
 
-      when (componentName) {
-        "InspectionProjectProfileManager" -> {
-          iterator.remove()
-          val schemeDir = projectConfigDir.resolve("inspectionProfiles")
-          convertProfiles(component.getChildren("profile").iterator(), componentName, schemeDir)
-          component.removeChild("version")
-          writeProfileSettings(schemeDir)
-        }
+      val wrapper = Element("component").setAttribute("name", componentName)
+      component.name = "settings"
+      wrapper.addContent(component)
 
-        "CopyrightManager" -> {
-          iterator.remove()
-          val schemeDir = projectConfigDir.resolve("copyright")
-          convertProfiles(component.getChildren("copyright").iterator(), componentName, schemeDir)
-          writeProfileSettings(schemeDir)
+      val file = schemeDir.resolve("profiles_settings.xml")
+      if (file.fileSystem == FileSystems.getDefault()) {
+        // VFS must be used to write workspace.xml and misc.xml to ensure that project files will be not reloaded on external file change event
+        writeFile(file, fakeSaveSession, null, createDataWriterForElement(wrapper, "default project"), LineSeparator.LF,
+                  prependXmlProlog = false)
+      }
+      else {
+        file.outputStream().use {
+          wrapper.write(it)
         }
+      }
+    }
 
-        ModuleManagerImpl.COMPONENT_NAME -> {
-          iterator.remove()
-        }
+    when (componentName) {
+      "InspectionProjectProfileManager" -> {
+        iterator.remove()
+        val schemeDir = projectConfigDir.resolve("inspectionProfiles")
+        convertProfiles(component.getChildren("profile").iterator(), componentName, schemeDir)
+        component.removeChild("version")
+        writeProfileSettings(schemeDir)
+      }
+
+      "CopyrightManager" -> {
+        iterator.remove()
+        val schemeDir = projectConfigDir.resolve("copyright")
+        convertProfiles(component.getChildren("copyright").iterator(), componentName, schemeDir)
+        writeProfileSettings(schemeDir)
+      }
+
+      ModuleManagerImpl.COMPONENT_NAME -> {
+        iterator.remove()
       }
     }
   }
@@ -97,7 +96,7 @@ internal fun moveComponentConfiguration(defaultProject: Project, element: Elemen
   val compilerComponentNames = THashSet<String>()
 
   fun processComponents(aClass: Class<*>) {
-    val stateAnnotation = StoreUtil.getStateSpec(aClass)
+    val stateAnnotation = getStateSpec(aClass)
     if (stateAnnotation == null || stateAnnotation.name.isEmpty()) {
       return
     }
@@ -168,7 +167,7 @@ private fun writeConfigFile(elements: List<Element>, file: Path) {
   }
 }
 
-private val fakeSaveSession = object : StateStorage.SaveSession {
+private val fakeSaveSession = object : SaveSession {
   override fun save() {
   }
 }

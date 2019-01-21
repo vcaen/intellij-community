@@ -103,5 +103,19 @@ no instance(s) of type variable(s) exist so that Integer conforms to String">() 
         };
       }
     };
+
+    Runnable r = () -> <error descr="Target type for switch expression cannot be void">switch</error>(0) {
+      default -> throw new IllegalArgumentException();
+    };
+  }
+
+  static void test(boolean b, int i) {
+    Class<?> c = (b ?
+                  switch (i) {
+                    case 1 -> true;
+                    default -> 0;
+                  } : 1).getClass();
+
+    System.out.println(c.getCanonicalName());
   }
 }

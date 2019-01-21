@@ -10,14 +10,21 @@ import com.intellij.psi.stubs.StubElement
 import com.intellij.psi.util.CachedValue
 import com.intellij.psi.util.CachedValueProvider.Result
 import com.intellij.psi.util.CachedValuesManager
+import com.intellij.psi.util.PsiTreeUtil.findFirstParent
+import com.intellij.psi.util.PsiTreeUtil.getParentOfType
 import com.intellij.util.toArray
 import org.jetbrains.plugins.groovy.lang.parser.GroovyElementTypes
+import org.jetbrains.plugins.groovy.lang.psi.GrControlFlowOwner
 import org.jetbrains.plugins.groovy.lang.psi.GrReferenceElement
+import org.jetbrains.plugins.groovy.lang.psi.api.GroovyResolveResult
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrParametersOwner
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariable
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariableDeclaration
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrClosableBlock
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrReferenceExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrSafeCastExpression
+import org.jetbrains.plugins.groovy.lang.psi.api.statements.params.GrParameter
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.GrTypeDefinition
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.typedef.members.GrMethod
 import org.jetbrains.plugins.groovy.lang.psi.api.toplevel.imports.GrImportStatement
@@ -30,11 +37,11 @@ internal fun getScriptDeclarations(fileImpl: GroovyFileImpl, topLevelOnly: Boole
   val tree = fileImpl.stubTree ?: return fileImpl.collectScriptDeclarations(topLevelOnly)
   return if (topLevelOnly) {
     val root: StubElement<*> = tree.root
-    root.getChildrenByType(GroovyElementTypes.VARIABLE_DEFINITION, GrVariableDeclaration.EMPTY_ARRAY)
+    root.getChildrenByType(GroovyElementTypes.VARIABLE_DECLARATION, GrVariableDeclaration.EMPTY_ARRAY)
   }
   else {
     tree.plainList.filter {
-      it.stubType === GroovyElementTypes.VARIABLE_DEFINITION
+      it.stubType === GroovyElementTypes.VARIABLE_DECLARATION
     }.map {
       it.psi as GrVariableDeclaration
     }.toTypedArray()
@@ -97,8 +104,12 @@ fun GrMethodCall.isImplicitCall(): Boolean {
 
 fun GrCodeReferenceElement.getDiamondTypes(): Array<out PsiType?> {
   val result = advancedResolve()
-  val clazz = result.element as? PsiClass ?: return PsiType.EMPTY_ARRAY
-  val substitutor = result.substitutor // this may start inference session
+  return result.getTypeArgumentsFromResult()
+}
+
+fun GroovyResolveResult.getTypeArgumentsFromResult(): Array<out PsiType?> {
+  val clazz = element as? PsiClass ?: return PsiType.EMPTY_ARRAY
+  val substitutor = substitutor // this may start inference session
   return clazz.typeParameters.map(substitutor::substitute).toArray(PsiType.EMPTY_ARRAY)
 }
 
@@ -134,4 +145,18 @@ private fun GrCodeReferenceElement.isInClosureSafeCast(): Boolean {
   val typeElement = parent as? GrClassTypeElement
   val safeCast = typeElement?.parent as? GrSafeCastExpression
   return safeCast?.operand is GrClosableBlock
+}
+
+/**
+ * @return `true` if variable is declared in given block(nested closure and method blocks excluded)
+ */
+fun GrVariable.isDeclaredIn(block: GrControlFlowOwner): Boolean {
+  if (this is GrParameter) {
+    val parametersOwner = getParentOfType(block, GrParametersOwner::class.java, false)
+    return declarationScope == parametersOwner
+  }
+
+  val parent = findFirstParent(this) { block == it || it is GrMethod || it is GrClosableBlock }
+
+  return parent == block
 }

@@ -2,6 +2,7 @@
 package com.intellij.openapi.fileEditor.impl;
 
 import com.intellij.ProjectTopics;
+import com.intellij.featureStatistics.fusCollectors.AppLifecycleUsageTriggerCollector;
 import com.intellij.featureStatistics.fusCollectors.ProjectLifecycleUsageTriggerCollector;
 import com.intellij.ide.IdeBundle;
 import com.intellij.ide.IdeEventQueue;
@@ -10,7 +11,7 @@ import com.intellij.ide.ui.UISettings;
 import com.intellij.ide.ui.UISettingsListener;
 import com.intellij.injected.editor.VirtualFileWindow;
 import com.intellij.internal.statistic.eventLog.FeatureUsageLogger;
-import com.intellij.internal.statistic.service.fus.collectors.FUSProjectUsageTrigger;
+import com.intellij.internal.statistic.utils.StatisticsUtilKt;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.*;
 import com.intellij.openapi.application.ex.ApplicationManagerEx;
@@ -60,7 +61,6 @@ import com.intellij.util.ArrayUtil;
 import com.intellij.util.ObjectUtils;
 import com.intellij.util.SmartList;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.io.storage.HeavyProcessLatch;
 import com.intellij.util.messages.MessageBusConnection;
 import com.intellij.util.messages.impl.MessageListenerList;
 import com.intellij.util.ui.JBUI;
@@ -840,7 +840,6 @@ public class FileEditorManagerImpl extends FileEditorManagerEx implements Persis
         return;
       }
 
-      HeavyProcessLatch.INSTANCE.prioritizeUiActivity();
       ((TransactionGuardImpl)TransactionGuard.getInstance()).assertWriteActionAllowed();
 
       compositeRef.set(window.findFileComposite(file));
@@ -1499,8 +1498,8 @@ public class FileEditorManagerImpl extends FileEditorManagerEx implements Persis
               Long startTime = myProject.getUserData(ProjectImpl.CREATION_TIME);
               if (startTime != null) {
                 long time = (currentTime - startTime.longValue()) / 1000000;
-                FUSProjectUsageTrigger.getInstance(myProject).trigger(ProjectLifecycleUsageTriggerCollector.class, "project.open.time."+(time/1000));
-                FeatureUsageLogger.INSTANCE.log("lifecycle", "project.opening.finished", Collections.singletonMap("time.ms", time));
+                FeatureUsageLogger.INSTANCE.log(ProjectLifecycleUsageTriggerCollector.GROUP_ID, "project.open.time."+(time/1000), StatisticsUtilKt.createData(myProject, null));
+                FeatureUsageLogger.INSTANCE.log(AppLifecycleUsageTriggerCollector.LIFECYCLE, "project.opening.finished", Collections.singletonMap("time.ms", time));
 
                 LOG.info("Project opening took " + time + " ms");
                 PluginManagerCore.dumpPluginClassStatistics();

@@ -286,6 +286,7 @@ object GuiTestLocalLauncher {
       .plus("-Dnative.mac.file.chooser.enabled=false")
       .plus("-Didea.config.path=${GuiTestOptions.configPath}")
       .plus("-Didea.system.path=${GuiTestOptions.systemPath}")
+      .plus("-Didea.gui.tests.log.file=${GuiTestOptions.guiTestLogFile}")
       .plus("-Dfile.encoding=${GuiTestOptions.encoding}")
       .plusIf(System.getProperty("java.io.tmpdir") != null, "-Djava.io.tmpdir=${System.getProperty("java.io.tmpdir")}")
       .plusIf(!ide.ideType.platformPrefix.isNullOrEmpty(), "-Didea.platform.prefix=${ide.ideType.platformPrefix}")
@@ -337,7 +338,7 @@ object GuiTestLocalLauncher {
   }
 
   private fun substituteAllMacro(classpath: MutableSet<File>): MutableSet<File> {
-    val macroList = listOf("\$MAVEN_REPOSITORY\$", "\$KOTLIN_BUNDLED\$")
+    val macroList = listOf("\$MAVEN_REPOSITORY\$")
     val macroMap = mutableMapOf<String, String>()
     macroList.forEach { macroMap[it] = resolveMacro(classpath, it) }
     val mutableClasspath = mutableListOf<File>()

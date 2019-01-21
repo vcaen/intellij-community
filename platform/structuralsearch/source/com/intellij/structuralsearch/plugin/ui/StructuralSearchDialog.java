@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.structuralsearch.plugin.ui;
 
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer;
@@ -38,7 +38,6 @@ import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.openapi.util.registry.Registry;
-import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -76,6 +75,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+
+import static com.intellij.openapi.util.text.StringUtil.*;
 
 /**
  * @author Bas Leijdekkers
@@ -187,7 +188,6 @@ public class StructuralSearchDialog extends DialogWrapper {
         TextCompletionUtil.installCompletionHint(editor);
         editor.putUserData(STRUCTURAL_SEARCH, StructuralSearchDialog.this);
         editor.setEmbeddedIntoDialogWrapper(true);
-        ApplicationManager.getApplication().invokeLater(() -> startTemplate());
         return editor;
       }
 
@@ -292,6 +292,7 @@ public class StructuralSearchDialog extends DialogWrapper {
           setTextForEditor(text, myReplaceCriteriaEdit);
         }
         myScopePanel.setScope(null);
+        ApplicationManager.getApplication().invokeLater(() -> startTemplate());
         return;
       }
     }
@@ -455,12 +456,13 @@ public class StructuralSearchDialog extends DialogWrapper {
                                                              boolean hasFocus) {
                           if (value instanceof ReplaceConfiguration) {
                             setIcon(AllIcons.Actions.Replace);
-                            append(StringUtil.shortenTextWithEllipsis(value.getMatchOptions().getSearchPattern(), 49, 0, true) +
-                                   " ⇒ " + StringUtil.shortenTextWithEllipsis(value.getReplaceOptions().getReplacement(), 49, 0, true));
+                            append(shortenTextWithEllipsis(collapseWhiteSpace(value.getMatchOptions().getSearchPattern()), 49, 0, true)
+                                   + " ⇒ "
+                                   + shortenTextWithEllipsis(collapseWhiteSpace(value.getReplaceOptions().getReplacement()), 49, 0, true));
                           }
                           else {
                             setIcon(AllIcons.Actions.Find);
-                            append(StringUtil.shortenTextWithEllipsis(value.getMatchOptions().getSearchPattern(), 100, 0, true));
+                            append(shortenTextWithEllipsis(collapseWhiteSpace(value.getMatchOptions().getSearchPattern()), 100, 0, true));
                           }
                         }
                       })
@@ -640,8 +642,6 @@ public class StructuralSearchDialog extends DialogWrapper {
         setSize(otherSize.width, getSize().height);
       }
     }
-
-    startTemplate();
   }
 
   private void startTemplate() {
@@ -704,7 +704,7 @@ public class StructuralSearchDialog extends DialogWrapper {
       Matcher.validate(getProject(), matchOptions);
     }
     catch (MalformedPatternException e) {
-      final String message = StringUtil.isEmpty(matchOptions.getSearchPattern())
+      final String message = isEmpty(matchOptions.getSearchPattern())
                              ? null
                              : SSRBundle.message("this.pattern.is.malformed.message", (e.getMessage() != null) ? e.getMessage() : "");
       reportMessage(message, true, mySearchCriteriaEdit);

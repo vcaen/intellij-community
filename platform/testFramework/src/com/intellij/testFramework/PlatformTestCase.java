@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.testFramework;
 
 import com.intellij.application.options.CodeStyle;
@@ -37,6 +37,7 @@ import com.intellij.openapi.project.impl.ProjectImpl;
 import com.intellij.openapi.project.impl.TooManyProjectLeakedException;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.roots.ModuleRootModificationUtil;
+import com.intellij.openapi.roots.ex.ProjectRootManagerEx;
 import com.intellij.openapi.startup.StartupManager;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.EmptyRunnable;
@@ -113,6 +114,7 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
   private static Set<VirtualFile> ourEternallyLivingFilesCache;
   private SdkLeakTracker myOldSdks;
   private VirtualFilePointerTracker myVirtualFilePointerTracker;
+  @Nullable
   private CodeStyleSettingsTracker myCodeStyleSettingsTracker;
 
 
@@ -209,8 +211,11 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
 
     setUpProject();
 
-    myCodeStyleSettingsTracker = new CodeStyleSettingsTracker(
-      () -> isStressTest() || ApplicationManager.getApplication() == null || ApplicationManager.getApplication() instanceof MockApplication ? null : CodeStyle.getDefaultSettings());
+    boolean isTrackCodeStyleChanges = !(isStressTest() ||
+                                        ApplicationManager.getApplication() == null ||
+                                        ApplicationManager.getApplication() instanceof MockApplication);
+
+    myCodeStyleSettingsTracker = isTrackCodeStyleChanges ? new CodeStyleSettingsTracker(() -> CodeStyle.getDefaultSettings()) : null;
     ourTestCase = this;
     if (myProject != null) {
       ProjectManagerEx.getInstanceEx().openTestProject(myProject);
@@ -243,9 +248,10 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
     myProjectManager.openTestProject(myProject);
     LocalFileSystem.getInstance().refreshIoFiles(myFilesToDelete);
 
-    setUpModule();
-
-    setUpJdk();
+    WriteAction.run(() -> ProjectRootManagerEx.getInstanceEx(myProject).mergeRootsChangesDuring(() -> {
+      setUpModule();
+      setUpJdk();
+    }));
 
     LightPlatformTestCase.clearUncommittedDocuments(getProject());
 
@@ -268,8 +274,7 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
 
     try {
       String projectName = FileUtilRt.getNameWithoutExtension(fileName);
-      Project project = ProjectManagerEx.getInstanceEx().newProject(projectName, path, false, false);
-      assert project != null;
+      Project project = ProjectManagerEx.getInstanceEx().newProject(projectName, path);
       project.putUserData(CREATION_PLACE, creationPlace);
       return project;
     }
@@ -517,7 +522,11 @@ public abstract class PlatformTestCase extends UsefulTestCase implements DataPro
       })
       .append(() -> disposeProject())
       .append(() -> UIUtil.dispatchAllInvocationEvents())
-      .append(() -> myCodeStyleSettingsTracker.checkForSettingsDamage())
+      .append(() -> {
+        if (myCodeStyleSettingsTracker != null) {
+          myCodeStyleSettingsTracker.checkForSettingsDamage();
+        }
+      })
       .append(() -> {
         if (project != null) {
           InjectedLanguageManagerImpl.checkInjectorsAreDisposed(project);

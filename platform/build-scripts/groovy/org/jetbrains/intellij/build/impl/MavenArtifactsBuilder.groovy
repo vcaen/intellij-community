@@ -1,7 +1,8 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.intellij.build.impl
 
 import com.intellij.openapi.util.io.FileUtil
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.codeStyle.NameUtil
 import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
@@ -108,7 +109,12 @@ class MavenArtifactsBuilder {
     if (dep.scope == DependencyScope.RUNTIME) {
       dependency.scope = "runtime"
     }
-    if (!dep.includeTransitiveDeps) {
+    if (dep.includeTransitiveDeps) {
+      dep.excludedDependencies.each {
+        dependency.addExclusion(new Exclusion(groupId: StringUtil.substringBefore(it, ":"), artifactId: StringUtil.substringAfter(it, ":")))
+      }
+    }
+    else {
       dependency.addExclusion(new Exclusion(groupId: "*", artifactId: "*"))
     }
     dependency
@@ -131,7 +137,7 @@ class MavenArtifactsBuilder {
     def words = NameUtil.splitNameIntoWords(s)
     def result = new ArrayList<String>()
     for (int i = 0; i < words.length; i++) {
-      String next;
+      String next
       if (i < words.length - 1 && Character.isDigit(words[i + 1].charAt(0))) {
         next = words[i] + words[i+1]
         i++
@@ -210,22 +216,20 @@ class MavenArtifactsBuilder {
           mavenizable = false
           return
         }
-        dependencies << new MavenArtifactDependency(depArtifact.coordinates, true, scope)
+        dependencies << new MavenArtifactDependency(depArtifact.coordinates, true, [], scope)
       }
       else if (dependency instanceof JpsLibraryDependency) {
         def library = (dependency as JpsLibraryDependency).library
-        def libraryDescriptors = getMavenLibraryDescriptors(library)
-        if (libraryDescriptors.isEmpty()) {
+        def typed = library.asTyped(JpsRepositoryLibraryType.INSTANCE)
+        if (typed != null) {
+          dependencies << createArtifactDependencyByLibrary(typed.properties.data, scope)
+        }
+        else {
           List<String> names = LibraryLicensesListGenerator.getLibraryNames(library)
           for (n in names) {
             buildContext.messages.debug(" module '$module.name' depends on non-maven library $n")
           }
           mavenizable = false
-        }
-        else {
-          libraryDescriptors.each {
-            dependencies << createArtifactDependencyByLibrary(it, scope)
-          }
         }
       }
     }
@@ -241,30 +245,11 @@ class MavenArtifactsBuilder {
 
   private static MavenArtifactDependency createArtifactDependencyByLibrary(JpsMavenRepositoryLibraryDescriptor descriptor, DependencyScope scope) {
     new MavenArtifactDependency(new MavenCoordinates(descriptor.groupId, descriptor.artifactId, descriptor.version),
-                                descriptor.includeTransitiveDependencies, scope)
+                                descriptor.includeTransitiveDependencies, descriptor.excludedDependencies, scope)
   }
 
   static Dependency createDependencyTagByLibrary(JpsMavenRepositoryLibraryDescriptor descriptor) {
     createDependencyTag(createArtifactDependencyByLibrary(descriptor, DependencyScope.COMPILE))
-  }
-
-  private List<JpsMavenRepositoryLibraryDescriptor> getMavenLibraryDescriptors(JpsLibrary library) {
-    def typed = library.asTyped(JpsRepositoryLibraryType.INSTANCE)
-    if (typed != null) {
-      return [typed.properties.data]
-    }
-    if (library.name == "KotlinJavaRuntime") {
-      //todo[nik] remove this when KotlinJavaRuntime will be converted to repository library (we didn't do it yet for historical reasons and to avoid specifying Kotlin version in two places
-      def versionFile = new File(buildContext.paths.kotlinHome, "kotlinc/build.txt")
-      if (!versionFile.exists()) {
-        buildContext.messages.error("Cannot read Kotlin version, $versionFile doesn't exist")
-      }
-      def kotlinVersion = versionFile.text.trim().takeWhile { it != '-' }.toString()
-      return ["kotlin-stdlib", "kotlin-stdlib-jdk7", "kotlin-stdlib-jdk8", "kotlin-reflect", "kotlin-test"].collect {
-        new JpsMavenRepositoryLibraryDescriptor("org.jetbrains.kotlin", it, kotlinVersion, false)
-      }
-    }
-    return []
   }
 
   @Immutable
@@ -279,6 +264,7 @@ class MavenArtifactsBuilder {
   private static class MavenArtifactDependency {
     MavenCoordinates coordinates
     boolean includeTransitiveDeps
+    List<String> excludedDependencies
     DependencyScope scope
   }
 

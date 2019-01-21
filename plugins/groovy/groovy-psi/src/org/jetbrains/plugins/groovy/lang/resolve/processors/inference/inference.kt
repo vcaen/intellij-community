@@ -17,17 +17,19 @@ import org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil
 import org.jetbrains.plugins.groovy.lang.resolve.api.Argument
 import org.jetbrains.plugins.groovy.lang.resolve.api.ExpressionArgument
 import org.jetbrains.plugins.groovy.lang.resolve.api.JustTypeArgument
+import org.jetbrains.plugins.groovy.lang.resolve.api.UnknownArgument
 import org.jetbrains.plugins.groovy.lang.resolve.processors.ClassHint
 
 fun getTopLevelType(expression: GrExpression): PsiType? {
   if (expression is GrMethodCall) {
-    val resolved = expression.advancedResolve()
-    (resolved as? GroovyMethodResult)?.candidate?.let {
+    val resolved = expression.advancedResolve() as? GroovyMethodResult
+    resolved?.candidate?.let {
       val session = GroovyInferenceSessionBuilder(expression, it, resolved.contextSubstitutor)
         .resolveMode(false)
         .build()
       return session.inferSubst().substitute(PsiUtil.getSmartReturnType(it.method))
     }
+    return null
   }
 
   if (expression is GrClosableBlock) {
@@ -56,7 +58,7 @@ fun buildQualifier(ref: GrReferenceExpression, state: ResolveState): Argument {
   val type = getQualifierType(ref)
   when {
     spreadState == null -> return JustTypeArgument(type)
-    type == null -> return JustTypeArgument(null)
+    type == null -> return UnknownArgument
     else -> return JustTypeArgument(extractIterableTypeParameter(type, false))
   }
 }

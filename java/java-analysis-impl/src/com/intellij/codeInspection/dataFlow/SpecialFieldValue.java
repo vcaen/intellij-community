@@ -2,7 +2,8 @@
 package com.intellij.codeInspection.dataFlow;
 
 import com.intellij.codeInspection.dataFlow.value.DfaConstValue;
-import com.intellij.codeInspection.dataFlow.value.DfaValueFactory;
+import com.intellij.codeInspection.dataFlow.value.DfaFactMapValue;
+import com.intellij.codeInspection.dataFlow.value.DfaValue;
 import com.intellij.psi.PsiType;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -14,13 +15,19 @@ import java.util.Objects;
  */
 public final class SpecialFieldValue {
   private final @NotNull SpecialField myField;
-  private final @Nullable Object myValue;
-  private final @NotNull PsiType myType;
-  
-  public SpecialFieldValue(@NotNull SpecialField field, @Nullable Object value, @NotNull PsiType type) {
+  private final @NotNull DfaValue myValue;
+
+  public SpecialFieldValue(@NotNull SpecialField field, @NotNull DfaValue value) {
+    if (value instanceof DfaFactMapValue) {
+      myValue = ((DfaFactMapValue)value).withFact(DfaFactType.SPECIAL_FIELD_VALUE, null);
+    }
+    else if (value instanceof DfaConstValue) {
+      myValue = value;
+    }
+    else {
+      throw new IllegalArgumentException("Unexpected value: " + value);
+    }
     myField = field;
-    myValue = value;
-    myType = type;
   }
 
   @NotNull
@@ -28,14 +35,9 @@ public final class SpecialFieldValue {
     return myField;
   }
 
-  @Nullable
-  public Object getValue() {
-    return myValue;
-  }
-
   @NotNull
-  public PsiType getType() {
-    return myType;
+  public DfaValue getValue() {
+    return myValue;
   }
 
   @Override
@@ -43,9 +45,20 @@ public final class SpecialFieldValue {
     if (this == o) return true;
     if (!(o instanceof SpecialFieldValue)) return false;
     SpecialFieldValue value = (SpecialFieldValue)o;
-    return myField == value.myField && myType.equals(value.myType) && Objects.equals(myValue, value.myValue);
+    return myField == value.myField && myValue == value.myValue;
   }
 
+  @Nullable
+  public SpecialFieldValue unite(SpecialFieldValue other) {
+    if (other == this) return this;
+    if (myField != other.myField) return null;
+    DfaValue newValue = myValue.unite(other.myValue);
+    if (newValue instanceof DfaConstValue || newValue instanceof DfaFactMapValue) {
+      return new SpecialFieldValue(myField, newValue);
+    }
+    return null;
+  }
+  
   @Override
   public int hashCode() {
     return myField.hashCode() * 31 + Objects.hashCode(myValue);
@@ -56,7 +69,7 @@ public final class SpecialFieldValue {
     return myField + " = " + myValue;
   }
 
-  public DfaConstValue toConstant(DfaValueFactory factory) {
-    return factory.getConstFactory().createFromValue(myValue, myType);
+  public String getPresentationText(PsiType type) {
+    return myField.getPresentationText(myValue, type);
   }
 }

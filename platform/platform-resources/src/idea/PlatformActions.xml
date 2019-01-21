@@ -138,6 +138,7 @@
       <action id="EditorAddOrRemoveCaret" class="com.intellij.openapi.editor.actions.AddOrRemoveCaretDummyAction"/>
       <action id="EditorCreateRectangularSelection" class="com.intellij.openapi.editor.actions.CreateRectangularSelectionAction"/>
       <action id="EditorAddRectangularSelectionOnMouseDrag" class="com.intellij.openapi.editor.actions.AddRectangularSelectionOnMouseDragAction"/>
+      <action id="EditorCreateRectangularSelectionOnMouseDrag" class="com.intellij.openapi.editor.actions.CreateRectangularSelectionOnMouseDragAction"/>
       <action id="EditorCloneCaretBelow" class="com.intellij.openapi.editor.actions.CloneCaretBelow"/>
       <action id="EditorCloneCaretAbove" class="com.intellij.openapi.editor.actions.CloneCaretAbove"/>
       <action id="EditorToggleStickySelection" class="com.intellij.openapi.editor.actions.ToggleStickySelectionModeAction"/>
@@ -152,6 +153,8 @@
       <action id="EditorTextEnd" class="com.intellij.openapi.editor.actions.TextEndAction"/>
       <action id="EditorForwardParagraph" class="com.intellij.openapi.editor.actions.ForwardParagraphAction"/>
       <action id="EditorBackwardParagraph" class="com.intellij.openapi.editor.actions.BackwardParagraphAction"/>
+      <action id="EditorForwardParagraphWithSelection" class="com.intellij.openapi.editor.actions.ForwardParagraphWithSelectionAction"/>
+      <action id="EditorBackwardParagraphWithSelection" class="com.intellij.openapi.editor.actions.BackwardParagraphWithSelectionAction"/>
       <action id="EditorLineStartWithSelection" class="com.intellij.openapi.editor.actions.LineStartWithSelectionAction"/>
       <action id="EditorLineEndWithSelection" class="com.intellij.openapi.editor.actions.LineEndWithSelectionAction"/>
       <action id="EditorTextStartWithSelection" class="com.intellij.openapi.editor.actions.TextStartWithSelectionAction"/>
@@ -486,11 +489,8 @@
           <action id="JumpToLastWindow" class="com.intellij.ide.actions.JumpToLastWindowAction"/>
           <action id="MaximizeToolWindow" class="com.intellij.openapi.wm.impl.MaximizeToolWindowAction"/>
           <separator/>
-          <action id="TogglePinnedMode" class="com.intellij.ide.actions.TogglePinnedModeAction"/>
-          <action id="ToggleDockMode" class="com.intellij.ide.actions.ToggleDockModeAction"/>
-          <action id="ToggleFloatingMode" class="com.intellij.ide.actions.ToggleFloatingModeAction"/>
-          <action id="ToggleWindowedMode" class="com.intellij.ide.actions.ToggleWindowedModeAction"/>
-          <action id="ToggleSideMode" class="com.intellij.ide.actions.ToggleSideModeAction"/>
+          <group id="TW.ViewModeGroup" class="com.intellij.ide.actions.ToolWindowViewModeAction$Group"/>
+          <group id="TW.MoveToGroup" class="com.intellij.ide.actions.ToolWindowMoveAction$Group"/>
           <action id="ToggleContentUiTypeMode" class="com.intellij.ide.actions.ToggleContentUiTypeAction"/>
           <action id="ShowContent" class="com.intellij.ide.actions.ShowContentAction"/>
           <group id="ResizeToolWindowGroup" popup="true">
@@ -640,6 +640,7 @@
       <reference ref="CompareClipboardWithSelection"/>
       <reference ref="$SearchWeb"/>
       <action id="CopyUrl" class="com.intellij.ide.actions.CopyUrlAction"/>
+      <action id="PauseOutput" class="com.intellij.execution.actions.PauseOutputAction"/>
     </group>
 
     <group id="EditorTabPopupMenu">
@@ -722,7 +723,7 @@
       <action id="FileChooser.GotoDesktop" class="com.intellij.openapi.fileChooser.actions.GotoDesktopDirAction"
         icon="AllIcons.Nodes.Desktop"/>
       <action id="FileChooser.GotoProject" class="com.intellij.openapi.fileChooser.actions.GotoProjectDirectory"
-        icon="AllIcons.Nodes.IdeaProject"/>
+        icon="AllIcons.Actions.ProjectDirectory"/>
       <separator/>
       <action id="FileChooser.NewFile" class="com.intellij.openapi.fileChooser.actions.NewFileAction"
         icon="AllIcons.Actions.New"/>
@@ -810,10 +811,6 @@
         <action id="UiInspector" internal="true" class="com.intellij.internal.inspector.UiInspectorAction" text="UI &amp;Inspector">
           <abbreviation value="uii"/>
         </action>
-        <action id="ShowHeatMap" internal="true" description="Paints tool bar buttons and menus based on statistics" text="Show HeatMap"
-                class="com.intellij.internal.heatmap.actions.ShowHeatMapAction">
-          <abbreviation value="shm"/>
-        </action>
         <action id="UiDropper" internal="true" class="com.intellij.internal.inspector.UiDropperAction" text="UI &amp;Dropper"/>
         <action id="HidpiInfo" internal="true" class="com.intellij.internal.HidpiInfo" text="Show &amp;HiDPI Info"/>
         <action id="GrayFilterConfig" internal="true" class="com.intellij.internal.GrayFilterConfig" text="&amp;GrayFilter"/>
@@ -853,9 +850,13 @@
       <reference ref="MaintenanceGroup"/>
 
       <group id="FeatureUsage.Internal" popup="true" compact="true" text="Feature Usages Statistics">
-        <action internal="true" id="SendFUStatistics" class="com.intellij.internal.statistic.actions.SendFUStatisticsAction" text="Collect And Send Statistics"/>
         <action internal="true" id="SendEventLogStatistics" class="com.intellij.internal.statistic.actions.SendEventLogAction" text="Send Feature Usage Event Log"/>
         <action internal="true" id="RecordStateCollectors" class="com.intellij.internal.statistic.actions.RecordStateStatisticsEventLogAction" text="Record State Collectors to Event Log"/>
+      </group>
+
+      <group id="Internal.PMM" popup="true" text="PMM Utils">
+        <action id="ApplyFixedWindowSize" internal="true" class="com.intellij.internal.inspector.ApplyWindowSizeAction" text="Apply Specific Size"/>
+        <action id="ConfigureDefaultSize" internal="true" class="com.intellij.internal.inspector.ConfigureCustomSizeAction" text="Configure Default Size..."/>
       </group>
 
       <action internal="true" id="ShowEditorHighlighterTokens" class="com.intellij.openapi.editor.actions.ShowEditorHighlighterTokensAction"
@@ -919,6 +920,7 @@
     <action id="CopySettingsPath" class="com.intellij.openapi.options.newEditor.CopySettingsPathAction"/>
 
     <action id="ShowFilterPopup" class="com.intellij.find.editorHeaderActions.ShowMoreOptions" text="Show Filter Popup"/>
+    <action id="ShowSearchHistory" class="com.intellij.find.actions.ShowSearchHistoryAction" text="Show Search History"/>
 
     <group id="TabsActions" text="Tabs">
       <action id="GoToTab1" class="com.intellij.ide.actions.TabNavigationActionBase$GoToTab1Action"/>
@@ -940,6 +942,22 @@
       <reference id="MoveEditorToOppositeTabGroup"/>
       <reference id="OpenEditorInOppositeTabGroup"/>
 
+      <add-to-group group-id="Other.KeymapGroup"/>
+    </group>
+    <group id="TWViewModes" text="Tool Windows View Modes">
+      <action id="DockPinnedMode" class="com.intellij.ide.actions.ToolWindowDockPinnedAction"/>
+      <action id="DockUnpinnedMode" class="com.intellij.ide.actions.ToolWindowDockUnpinnedAction"/>
+      <action id="UndockMode" class="com.intellij.ide.actions.ToolWindowUndockAction"/>
+      <action id="FloatMode" class="com.intellij.ide.actions.ToolWindowFloatAction"/>
+      <action id="WindowMode" class="com.intellij.ide.actions.ToolWindowWindowAction"/>
+      <add-to-group group-id="Other.KeymapGroup"/>
+    </group>
+    <group id="TWViewModesLegacy" text="Tool Windows Legacy View Modes (deprecated)">
+      <action id="TogglePinnedMode" class="com.intellij.ide.actions.TogglePinnedModeAction"/>
+      <action id="ToggleDockMode" class="com.intellij.ide.actions.ToggleDockModeAction"/>
+      <action id="ToggleFloatingMode" class="com.intellij.ide.actions.ToggleFloatingModeAction"/>
+      <action id="ToggleWindowedMode" class="com.intellij.ide.actions.ToggleWindowedModeAction"/>
+      <action id="ToggleSideMode" class="com.intellij.ide.actions.ToggleSideModeAction"/>
       <add-to-group group-id="Other.KeymapGroup"/>
     </group>
     <group id="ToolWindowContextMenu"/>

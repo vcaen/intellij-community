@@ -24,10 +24,11 @@ public abstract class AbstractCodeStylePropertyMapper {
     myAccessorMap = AtomicNotNullLazyValue.createValue(() -> createMap());
   }
 
-  public void setProperty(@NotNull String name, @NotNull String value) {
+  public boolean setProperty(@NotNull String name, @NotNull String value) {
     if (getAccessorMap().containsKey(name)) {
-      myAccessorMap.getValue().get(name).set(value);
+      return myAccessorMap.getValue().get(name).set(value);
     }
+    return false;
   }
 
   @Nullable
@@ -135,7 +136,18 @@ public abstract class AbstractCodeStylePropertyMapper {
     }
   }
 
+  public CodeStylePropertyAccessor getAccessor(@NotNull String property) {
+    return myAccessorMap.getValue().get(property);
+  }
+
   protected boolean useDeclaredFields() {
     return false;
+  }
+
+  @NotNull
+  public abstract String getLanguageDomainId();
+
+  public boolean containsProperty(@NotNull String name) {
+    return getAccessorMap().containsKey(name);
   }
 }

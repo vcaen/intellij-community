@@ -56,29 +56,23 @@ public class IdeaTextPatchBuilder {
   }
 
   private static void addConvertChanges(@NotNull Project project,
-                                        @NotNull Collection<Change> changes,
-                                        @NotNull List<BeforeAfter<AirContentRevision>> result,
+                                        @NotNull Collection<? extends Change> changes,
+                                        @NotNull List<? super BeforeAfter<AirContentRevision>> result,
                                         @Nullable VcsOutgoingChangesProvider<?> provider,
                                         boolean honorExcludedFromCommit) {
-    Collection<Change> otherChanges;
-    if (honorExcludedFromCommit) {
-      otherChanges = PartialChangesUtil.processPartialChanges(project, changes, false, (partialChanges, tracker) -> {
-        if (!tracker.hasPartialChangesToCommit()) return false;
+    Collection<Change> otherChanges = PartialChangesUtil.processPartialChanges(project, changes, false, (partialChanges, tracker) -> {
+      if (!tracker.hasPartialChangesToCommit()) return false;
 
-        List<String> changelistIds = ContainerUtil.map(partialChanges, ChangeListChange::getChangeListId);
-        Change change = partialChanges.get(0).getChange();
+      List<String> changelistIds = ContainerUtil.map(partialChanges, ChangeListChange::getChangeListId);
+      Change change = partialChanges.get(0).getChange();
 
-        PartialCommitHelper helper = tracker.handlePartialCommit(Side.LEFT, changelistIds);
-        String actualText = helper.getContent();
+      PartialCommitHelper helper = tracker.handlePartialCommit(Side.LEFT, changelistIds, honorExcludedFromCommit);
+      String actualText = helper.getContent();
 
-        result.add(new BeforeAfter<>(convertRevision(change.getBeforeRevision(), null, provider),
-                                     convertRevision(change.getAfterRevision(), actualText, provider)));
-        return true;
-      });
-    }
-    else {
-      otherChanges = changes;
-    }
+      result.add(new BeforeAfter<>(convertRevision(change.getBeforeRevision(), null, provider),
+                                   convertRevision(change.getAfterRevision(), actualText, provider)));
+      return true;
+    });
 
     for (Change change : otherChanges) {
       result.add(new BeforeAfter<>(convertRevision(change.getBeforeRevision(), null, provider),

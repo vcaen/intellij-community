@@ -25,7 +25,6 @@ import com.intellij.openapi.ui.SimpleToolWindowPanel;
 import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.util.Disposer;
-import com.intellij.openapi.util.SystemInfo;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.wm.impl.VisibilityWatcher;
 import com.intellij.psi.PsiDocumentManager;
@@ -57,7 +56,6 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import java.awt.*;
-import java.awt.event.InputEvent;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.util.ArrayList;
@@ -113,7 +111,7 @@ abstract class TodoPanel extends SimpleToolWindowPanel implements OccurenceNavig
   private TodoTreeBuilder setupTreeStructure() {
     TodoTreeBuilder todoTreeBuilder = createTreeBuilder(myTree, myProject);
     TodoTreeStructure structure = todoTreeBuilder.getTodoTreeStructure();
-    StructureTreeModel structureTreeModel = new StructureTreeModel(structure, TodoTreeBuilder.MyComparator.ourInstance);
+    StructureTreeModel structureTreeModel = new StructureTreeModel(structure, TodoTreeBuilder.NODE_DESCRIPTOR_COMPARATOR);
     AsyncTreeModel asyncTreeModel = new AsyncTreeModel(structureTreeModel, myProject);
     myTree.setModel(asyncTreeModel);
     asyncTreeModel.addTreeModelListener(new MyExpandListener(todoTreeBuilder));
@@ -249,21 +247,6 @@ abstract class TodoPanel extends SimpleToolWindowPanel implements OccurenceNavig
   @NotNull
   protected DefaultActionGroup createGroupByActionGroup() {
     ActionManager actionManager = ActionManager.getInstance();
-    actionManager.getAction("TodoViewGroupByFlattenPackage").registerCustomShortcutSet(
-        new CustomShortcutSet(
-            KeyStroke.getKeyStroke(KeyEvent.VK_F, SystemInfo.isMac ? InputEvent.META_MASK : InputEvent.CTRL_MASK)),
-        myTree);
-
-    actionManager.getAction("TodoViewGroupByShowModules").registerCustomShortcutSet(
-        new CustomShortcutSet(
-            KeyStroke.getKeyStroke(KeyEvent.VK_M, SystemInfo.isMac ? InputEvent.META_MASK : InputEvent.CTRL_MASK)),
-        myTree);
-
-    actionManager.getAction("TodoViewGroupByShowPackages").registerCustomShortcutSet(
-        new CustomShortcutSet(
-            KeyStroke.getKeyStroke(KeyEvent.VK_P, SystemInfo.isMac ? InputEvent.META_MASK : InputEvent.CTRL_MASK)),
-        myTree);
-
     return (DefaultActionGroup) actionManager.getAction("TodoViewGroupByGroup");
   }
 
@@ -674,6 +657,12 @@ abstract class TodoPanel extends SimpleToolWindowPanel implements OccurenceNavig
     }
 
     @Override
+    public void update(@NotNull AnActionEvent e) {
+      e.getPresentation().setEnabled(e.getData(TODO_PANEL_DATA_KEY) != null);
+      super.update(e);
+    }
+
+    @Override
     public boolean isSelected(@NotNull AnActionEvent e) {
       TodoPanel todoPanel = e.getData(TODO_PANEL_DATA_KEY);
       return todoPanel != null && todoPanel.mySettings.arePackagesShown;
@@ -692,6 +681,12 @@ abstract class TodoPanel extends SimpleToolWindowPanel implements OccurenceNavig
   public static final class MyShowModulesAction extends ToggleAction {
     public MyShowModulesAction() {
       super(IdeBundle.message("action.group.by.modules"), null, AllIcons.Actions.GroupByModule);
+    }
+
+    @Override
+    public void update(@NotNull AnActionEvent e) {
+      e.getPresentation().setEnabled(e.getData(TODO_PANEL_DATA_KEY) != null);
+      super.update(e);
     }
 
     @Override
@@ -720,7 +715,6 @@ abstract class TodoPanel extends SimpleToolWindowPanel implements OccurenceNavig
     public void update(@NotNull AnActionEvent e) {
       super.update(e);
       TodoPanel todoPanel = e.getData(TODO_PANEL_DATA_KEY);
-
       e.getPresentation().setEnabled(todoPanel != null && todoPanel.mySettings.arePackagesShown);
     }
 

@@ -15,6 +15,7 @@ import com.intellij.debugger.engine.evaluation.expression.EvaluatorBuilder;
 import com.intellij.debugger.engine.evaluation.expression.ExpressionEvaluator;
 import com.intellij.debugger.engine.evaluation.expression.UnBoxingEvaluator;
 import com.intellij.debugger.engine.requests.RequestManagerImpl;
+import com.intellij.debugger.jdi.JvmtiError;
 import com.intellij.debugger.jdi.VirtualMachineProxyImpl;
 import com.intellij.debugger.requests.Requestor;
 import com.intellij.debugger.ui.breakpoints.Breakpoint;
@@ -640,6 +641,23 @@ public abstract class DebuggerUtilsEx extends DebuggerUtils {
     return null;
   }
 
+  public static List<Value> getArgumentValues(@NotNull StackFrame frame) {
+    try {
+      return frame.getArgumentValues();
+    }
+    catch (InternalException e) {
+      // From Oracle's forums:
+      // This could be a JPDA bug. Unexpected JDWP Error: 32 means that an 'opaque' frame was detected at the lower JPDA levels,
+      // typically a native frame.
+      if (e.errorCode() == JvmtiError.OPAQUE_FRAME /*opaque frame JDI bug*/ ) {
+        return Collections.emptyList();
+      }
+      else {
+        throw e;
+      }
+    }
+  }
+
   public static Value createValue(VirtualMachineProxyImpl vm, String expectedType, double value) {
     if (PsiType.DOUBLE.getName().equals(expectedType)) {
       return vm.mirrorOf(value);
@@ -1118,7 +1136,7 @@ public abstract class DebuggerUtilsEx extends DebuggerUtils {
       }
       else {
         ProjectFileIndex projectFileIndex = ProjectRootManager.getInstance(project).getFileIndex();
-        return projectFileIndex.isInLibraryClasses(file) || projectFileIndex.isInLibrarySource(file);
+        return projectFileIndex.isInLibrary(file);
       }
     });
   }

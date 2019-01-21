@@ -1,18 +1,4 @@
-/*
- * Copyright 2000-2016 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.vcs.changes;
 
 import com.intellij.openapi.application.ReadAction;
@@ -43,6 +29,8 @@ import org.jetbrains.annotations.Nullable;
 import java.io.File;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import static java.util.stream.Collectors.toSet;
 
 /** should work under _external_ lock
  * just logic here: do modifications to group of change lists
@@ -94,7 +82,7 @@ public class ChangeListWorker {
   }
 
   @NotNull
-  private Map<ListData, ListData> copyListsDataFrom(@NotNull Collection<ListData> lists) {
+  private Map<ListData, ListData> copyListsDataFrom(@NotNull Collection<? extends ListData> lists) {
     ListData oldDefault = myDefault;
     List<String> oldIds = ContainerUtil.map(myLists, list -> list.id);
 
@@ -291,7 +279,7 @@ public class ChangeListWorker {
   }
 
   @NotNull
-  public List<LocalChangeList> getAffectedLists(@NotNull Collection<Change> changes) {
+  public List<LocalChangeList> getAffectedLists(@NotNull Collection<? extends Change> changes) {
     return ContainerUtil.map(getAffectedListsData(changes), this::toChangeList);
   }
 
@@ -301,7 +289,7 @@ public class ChangeListWorker {
   }
 
   @NotNull
-  private List<ListData> getAffectedListsData(@NotNull Collection<Change> changes) {
+  private List<ListData> getAffectedListsData(@NotNull Collection<? extends Change> changes) {
     Set<ListData> result = new HashSet<>();
 
     for (Change change : changes) {
@@ -398,17 +386,15 @@ public class ChangeListWorker {
   }
 
   @NotNull
-  public List<Change> getChangesUnder(@NotNull FilePath dirPath) {
-    List<Change> changes = new ArrayList<>();
-    for (Change change : myIdx.getChanges()) {
-      ContentRevision after = change.getAfterRevision();
-      ContentRevision before = change.getBeforeRevision();
-      if (after != null && after.getFile().isUnder(dirPath, false) ||
-          before != null && before.getFile().isUnder(dirPath, false)) {
-        changes.add(change);
-      }
-    }
-    return changes;
+  public Set<Change> getChangesUnder(@NotNull FilePath dirPath) {
+    return myIdx.getChanges().stream().filter(change -> isChangeUnder(dirPath, change)).collect(toSet());
+  }
+
+  private static boolean isChangeUnder(@NotNull FilePath parent, @NotNull Change change) {
+    ContentRevision after = change.getAfterRevision();
+    ContentRevision before = change.getBeforeRevision();
+    return after != null && after.getFile().isUnder(parent, false) ||
+           before != null && before.getFile().isUnder(parent, false);
   }
 
   @Nullable
@@ -547,7 +533,7 @@ public class ChangeListWorker {
   }
 
   @Nullable
-  public MultiMap<LocalChangeList, Change> moveChangesTo(@NotNull String name, @NotNull List<Change> changes) {
+  public MultiMap<LocalChangeList, Change> moveChangesTo(@NotNull String name, @NotNull List<? extends Change> changes) {
     final ListData targetList = getDataByName(name);
     if (targetList == null) return null;
 
@@ -693,7 +679,7 @@ public class ChangeListWorker {
     }
   }
 
-  void setChangeLists(@NotNull Collection<LocalChangeListImpl> lists) {
+  void setChangeLists(@NotNull Collection<? extends LocalChangeListImpl> lists) {
     myIdx.clear();
     myChangeMappings.clear();
 
@@ -957,6 +943,10 @@ public class ChangeListWorker {
 
     @NotNull
     private List<Change> removeChangesUnderScope(@Nullable VcsModifiableDirtyScope scope) {
+      if (LOG.isDebugEnabled()) {
+        LOG.debug(String.format("Process scope: %s", scope));
+      }
+
       List<Change> removed = new ArrayList<>();
       for (Change change : myWorker.myIdx.getChanges()) {
         ContentRevision before = change.getBeforeRevision();
@@ -967,6 +957,9 @@ public class ChangeListWorker {
                                isIgnoredChange(before, after, getProject());
         if (isUnderScope) {
           removed.add(change);
+        }
+        if (LOG.isDebugEnabled()) {
+          LOG.debug(String.format("under scope - %s, change - %s", isUnderScope, change));
         }
       }
 
@@ -1035,8 +1028,8 @@ public class ChangeListWorker {
     }
 
     private void doneProcessingChanges(@NotNull ChangeListWorker.ListData list,
-                                       @NotNull List<Change> removedChanges,
-                                       @NotNull List<Change> addedChanges) {
+                                       @NotNull List<? super Change> removedChanges,
+                                       @NotNull List<? super Change> addedChanges) {
       OpenTHashSet<Change> changesBeforeUpdate = myChangesBeforeUpdateMap.get(list.id);
 
       Set<Change> listChanges = new HashSet<>(myWorker.getChangesIn(list));

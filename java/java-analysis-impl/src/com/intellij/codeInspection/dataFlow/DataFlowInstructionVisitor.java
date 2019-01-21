@@ -3,12 +3,14 @@ package com.intellij.codeInspection.dataFlow;
 
 import com.intellij.codeInspection.dataFlow.instructions.*;
 import com.intellij.codeInspection.dataFlow.value.*;
+import com.intellij.codeInspection.util.OptionalUtil;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.psi.util.PsiTypesUtil;
+import com.intellij.psi.util.TypeConversionUtil;
 import com.intellij.util.ThreeState;
 import com.intellij.util.containers.ContainerUtil;
 import com.siyeh.ig.callMatcher.CallMatcher;
@@ -78,7 +80,7 @@ final class DataFlowInstructionVisitor extends StandardInstructionVisitor {
     if (!(target instanceof DfaVariableValue)) return false;
     DfaVariableValue var = (DfaVariableValue)target;
     if (!(var.getPsiVariable() instanceof PsiField) || var.getQualifier() == null ||
-        !(var.getQualifier().getSource() instanceof DfaExpressionFactory.ThisSource)) {
+        !(var.getQualifier().getDescriptor() instanceof DfaExpressionFactory.ThisDescriptor)) {
       return false;
     }
 
@@ -94,7 +96,8 @@ final class DataFlowInstructionVisitor extends StandardInstructionVisitor {
     Object value = ((DfaConstValue)dest).getValue();
 
     PsiType type = var.getType();
-    boolean isDefaultValue = Objects.equals(PsiTypesUtil.getDefaultValue(type), value) || Long.valueOf(0L).equals(value) && PsiType.INT.equals(type);
+    boolean isDefaultValue = Objects.equals(PsiTypesUtil.getDefaultValue(type), value) ||
+                             Long.valueOf(0L).equals(value) && TypeConversionUtil.isIntegralNumberType(type);
     if (!isDefaultValue) return false;
     PsiMethod method = PsiTreeUtil.getParentOfType(rExpression, PsiMethod.class);
     return method != null && method.isConstructor();
@@ -199,7 +202,7 @@ final class DataFlowInstructionVisitor extends StandardInstructionVisitor {
   protected void beforeMethodReferenceResultPush(@NotNull DfaValue value,
                                                  @NotNull PsiMethodReferenceExpression methodRef,
                                                  @NotNull DfaMemoryState state) {
-    if (DfaOptionalSupport.OPTIONAL_OF_NULLABLE.methodReferenceMatches(methodRef)) {
+    if (OptionalUtil.OPTIONAL_OF_NULLABLE.methodReferenceMatches(methodRef)) {
       processOfNullableResult(value, state, methodRef.getReferenceNameElement());
     }
     PsiMethod method = tryCast(methodRef.resolve(), PsiMethod.class);
@@ -213,8 +216,16 @@ final class DataFlowInstructionVisitor extends StandardInstructionVisitor {
   }
 
   private void processOfNullableResult(@NotNull DfaValue value, @NotNull DfaMemoryState memState, PsiElement anchor) {
-    Boolean fact = memState.getValueFact(value, DfaFactType.OPTIONAL_PRESENCE);
-    ThreeState present = fact == null ? ThreeState.UNSURE : ThreeState.fromBoolean(fact);
+    DfaValueFactory factory = value.getFactory();
+    DfaValue optionalValue = factory == null ? DfaUnknownValue.getInstance() : SpecialField.OPTIONAL_VALUE.createValue(factory, value);
+    ThreeState present;
+    if (memState.isNull(optionalValue)) {
+      present = ThreeState.NO;
+    }
+    else if (memState.isNotNull(optionalValue)) {
+      present = ThreeState.YES;
+    }
+    else present = ThreeState.UNSURE;
     myOfNullableCalls.merge(anchor, present, ThreeState::merge);
   }
 
@@ -312,7 +323,7 @@ final class DataFlowInstructionVisitor extends StandardInstructionVisitor {
     @Override
     public void visitMethodCallExpression(PsiMethodCallExpression call) {
       super.visitMethodCallExpression(call);
-      if (DfaOptionalSupport.OPTIONAL_OF_NULLABLE.test(call)) {
+      if (OptionalUtil.OPTIONAL_OF_NULLABLE.test(call)) {
         processOfNullableResult(myValue, myMemState, call.getArgumentList().getExpressions()[0]);
       }
     }

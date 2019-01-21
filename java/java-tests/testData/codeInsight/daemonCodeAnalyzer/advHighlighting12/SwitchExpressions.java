@@ -54,8 +54,15 @@ class SwitchExpressions {
       System.out.println(switch (new Random().nextInt()) {
         case -1: <error descr="Return outside of enclosing switch expression">return;</error>
         case -2: <error descr="Continue outside of enclosing switch expression">continue lab;</error>
+        case -3: <error descr="Continue outside of enclosing switch expression">continue;</error>
         default: <error descr="Break outside of enclosing switch expression">break lab;</error>
       });
     }
+  }
+  
+  enum Empty {}
+  
+  boolean testEmpty(Empty e) {
+    return switch (<error descr="'switch' expression does not have any case clauses">e</error>) {};
   }
 }

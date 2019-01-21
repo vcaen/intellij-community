@@ -2,12 +2,12 @@
 package com.intellij.internal.statistic.collectors.fus.actions.persistence;
 
 import com.intellij.internal.statistic.beans.ConvertUsagesUtil;
-import com.intellij.internal.statistic.collectors.fus.actions.MainMenuUsagesCollector;
+import com.intellij.internal.statistic.eventLog.FeatureUsageDataBuilder;
+import com.intellij.internal.statistic.eventLog.FeatureUsageGroup;
 import com.intellij.internal.statistic.eventLog.FeatureUsageLogger;
 import com.intellij.internal.statistic.persistence.UsageStatisticsPersistenceComponent;
-import com.intellij.internal.statistic.service.fus.collectors.FUSUsageContext;
-import com.intellij.internal.statistic.utils.PluginType;
-import com.intellij.internal.statistic.utils.StatisticsUtilKt;
+import com.intellij.internal.statistic.utils.PluginInfo;
+import com.intellij.internal.statistic.utils.PluginInfoDetectorKt;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.impl.ActionMenu;
@@ -23,10 +23,12 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ItemEvent;
 import java.awt.event.MouseEvent;
-import java.util.*;
 import java.util.List;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+
+import static com.intellij.internal.statistic.service.fus.collectors.FUSUsageContext.OS_CONTEXT;
 
 /**
  * @author Konstantin Bulenkov
@@ -34,14 +36,16 @@ import java.util.stream.Collectors;
 @State(
   name = "MainMenuCollector",
   storages = {
-    @Storage(value = UsageStatisticsPersistenceComponent.USAGE_STATISTICS_XML, roamingType = RoamingType.DISABLED),
+    @Storage(value = UsageStatisticsPersistenceComponent.USAGE_STATISTICS_XML, roamingType = RoamingType.DISABLED, deprecated = true),
     @Storage(value = "statistics.main_menu.xml", roamingType = RoamingType.DISABLED, deprecated = true)
   }
 )
 public class MainMenuCollector implements PersistentStateComponent<MainMenuCollector.State> {
+  private static final FeatureUsageGroup GROUP = new FeatureUsageGroup("main.menu", 1);
   private static final String GENERATED_ON_RUNTIME_ITEM = "generated.on.runtime";
 
   private State myState = new State();
+
   @Nullable
   @Override
   public State getState() {
@@ -50,13 +54,12 @@ public class MainMenuCollector implements PersistentStateComponent<MainMenuColle
 
   @Override
   public void loadState(@NotNull State state) {
-    myState = state;
   }
 
   public void record(@NotNull AnAction action) {
     try {
-      final PluginType type = StatisticsUtilKt.getPluginType(action.getClass());
-      if (!type.isDevelopedByJetBrains()) {
+      final PluginInfo info = PluginInfoDetectorKt.getPluginInfo(action.getClass());
+      if (!info.isDevelopedByJetBrains()) {
         return;
       }
 
@@ -71,12 +74,8 @@ public class MainMenuCollector implements PersistentStateComponent<MainMenuColle
       }
 
       if (!StringUtil.isEmpty(path)) {
-        String key = ConvertUsagesUtil.escapeDescriptorName(path);
-        FeatureUsageLogger.INSTANCE.log(MainMenuUsagesCollector.GROUP_ID, key, FUSUsageContext.OS_CONTEXT.getData());
-
-        final Integer count = myState.myValues.get(key);
-        int value = count == null ? 1 : count + 1;
-        myState.myValues.put(key, value);
+        final Map<String, Object> data = new FeatureUsageDataBuilder().addFeatureContext(OS_CONTEXT).addPluginInfo(info).createData();
+        FeatureUsageLogger.INSTANCE.log(GROUP, ConvertUsagesUtil.escapeDescriptorName(path), data);
       }
     }
     catch (Exception ignore) {
@@ -88,8 +87,9 @@ public class MainMenuCollector implements PersistentStateComponent<MainMenuColle
     if (ranges.length == 0) throw new IllegalArgumentException("Constrains are empty");
     if (value < ranges[0]) return Pair.create(null, ranges[0]);
     for (int i = 1; i < ranges.length; i++) {
-      if (ranges[i] <= ranges[i - 1])
+      if (ranges[i] <= ranges[i - 1]) {
         throw new IllegalArgumentException("Constrains are unsorted");
+      }
 
       if (value < ranges[i]) {
         return Pair.create(ranges[i - 1], ranges[i]);
@@ -100,8 +100,7 @@ public class MainMenuCollector implements PersistentStateComponent<MainMenuColle
   }
 
 
-
-  protected static String findBucket(long value, Function<? super Long, String> valueConverter, long...ranges) {
+  protected static String findBucket(long value, Function<? super Long, String> valueConverter, long... ranges) {
     double[] dRanges = new double[ranges.length];
     for (int i = 0; i < dRanges.length; i++) {
       dRanges[i] = ranges[i];
@@ -109,7 +108,7 @@ public class MainMenuCollector implements PersistentStateComponent<MainMenuColle
     return findBucket((double)value, (d) -> valueConverter.apply(d.longValue()), dRanges);
   }
 
-  protected static String findBucket(double value, Function<? super Double, String> valueConverter, double...ranges) {
+  protected static String findBucket(double value, Function<? super Double, String> valueConverter, double... ranges) {
     for (double range : ranges) {
       if (range == value) {
         return valueConverter.apply(value);
@@ -136,6 +135,7 @@ public class MainMenuCollector implements PersistentStateComponent<MainMenuColle
   }
 
   private static final HashMap<String, String> ourBlackList = new HashMap<>();
+
   static {
     ourBlackList.put("com.intellij.ide.ReopenProjectAction", "Reopen Project");
     ourBlackList.put("com.intellij.openapi.wm.impl.ProjectWindowAction", "Switch Project");
@@ -165,7 +165,7 @@ public class MainMenuCollector implements PersistentStateComponent<MainMenuColle
     Object src = e.getSource();
     ArrayList<String> items = new ArrayList<>();
     while (src instanceof MenuItem) {
-      items.add (0, ((MenuItem)src).getLabel());
+      items.add(0, ((MenuItem)src).getLabel());
       src = ((MenuItem)src).getParent();
     }
     if (items.size() > 1) {

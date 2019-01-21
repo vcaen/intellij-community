@@ -62,6 +62,7 @@ class WindowsDistributionBuilder extends OsSpecificDistributionBuilder {
         }
       }
     }
+    BuildTasksImpl.unpackPty4jNative(buildContext, winDistPath, "win")
 
     buildContext.ant.copy(file: ideaProperties.path, todir: "$winDistPath/bin")
     buildContext.ant.fixcrlf(file: "$winDistPath/bin/idea.properties", eol: "dos")
@@ -105,7 +106,7 @@ class WindowsDistributionBuilder extends OsSpecificDistributionBuilder {
     }
 
     if (customizer.buildZipArchive) {
-      buildWinZip(jreDirectoryPaths.findAll {it != null}, buildContext.productProperties.buildCrossPlatformDistribution ? ".win" : "", winDistPath)
+      buildWinZip(jreDirectoryPaths.findAll {it != null}, ".win", winDistPath)
     }
 
     if (arch != null && customizer.buildZipWithBundledOracleJre &&

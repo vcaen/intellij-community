@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.plugins.groovy.lang.resolve
 
 import com.intellij.psi.PsiClassType
@@ -8,7 +8,6 @@ import com.intellij.psi.PsiType
 import com.intellij.psi.impl.source.PsiImmediateClassType
 import groovy.transform.CompileStatic
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFile
-import org.jetbrains.plugins.groovy.lang.psi.api.statements.GrVariableDeclaration
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrAssignmentExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrReferenceExpression
@@ -17,6 +16,8 @@ import org.jetbrains.plugins.groovy.lang.psi.util.GroovyCommonClassNames
 import org.jetbrains.plugins.groovy.lang.psi.util.PsiUtil
 
 import static com.intellij.psi.CommonClassNames.*
+import static org.jetbrains.plugins.groovy.lang.psi.dataFlow.types.NestedContextKt.allowNestedContext
+import static org.jetbrains.plugins.groovy.lang.psi.dataFlow.types.NestedContextKt.allowNestedContextOnce
 
 /**
  * @author ven
@@ -217,6 +218,7 @@ class TypeInferenceTest extends TypeInferenceTestBase {
   }
 
   void testTraditionalForVar() {
+    allowNestedContext(2, testRootDisposable)
     assertTypeEquals(JAVA_LANG_INTEGER, "A.groovy")
   }
 
@@ -230,10 +232,6 @@ class TypeInferenceTest extends TypeInferenceTestBase {
 
   void testMultiTypeParameter() {
     assertTypeEquals("X | Y", "a.groovy")
-  }
-
-  void testTypeArgsInAccessor() {
-    assertTypeEquals("Foo<java.lang.String>", "a.groovy")
   }
 
   void testSingleParameterInStringInjection() {
@@ -267,18 +265,7 @@ map['i'] += 2
   }
 
   void testIndexPropertyInLHS() {
-    assertTypeEquals("java.util.LinkedHashMap", 'a.groovy')
-  }
-
-  void testEmptyMapTypeArgs() {
-    myFixture.configureByText('a.groovy', '''
-class X<A, B> implements Map<A, B> {}
-
-X<String, Integer> x = [:]
-''')
-
-    def type = ((myFixture.file as GroovyFile).statements[0] as GrVariableDeclaration).variables[0].initializerGroovy.type
-    assertEquals("java.util.LinkedHashMap<java.lang.String,java.lang.Integer>", type.canonicalText)
+    assertTypeEquals("java.util.LinkedHashMap<java.lang.Object, java.lang.Object>", 'a.groovy')
   }
 
   void testRawCollectionsInCasts() {
@@ -321,6 +308,7 @@ print fou<caret>nd''', 'java.util.HashSet<java.lang.String>')
   }
 
   void testInferArgumentTypeFromMethod1() {
+    allowNestedContextOnce(testRootDisposable)
     doTest('''\
 def bar(String s) {}
 
@@ -357,6 +345,7 @@ def foo(Integer a) {
   }
 
   void testInferArgumentTypeFromMethod4() {
+    allowNestedContext(2, testRootDisposable)
     doTest('''\
 def bar(String s) {}
 
@@ -569,6 +558,16 @@ def foo(bar) {
 }''', 'java.lang.Runnable')
   }
 
+  void 'test enum constant'() {
+    doTest('''\
+import static MyEnum.*
+enum MyEnum {ONE}
+if (ONE instanceof String) {
+  <caret>ONE
+}
+''', 'MyEnum')
+  }
+
   void testInString() {
     doTest '''\
 def foo(ii) {
@@ -586,6 +585,7 @@ def foo(ii) {
   }
 
   void testIndexProperty() {
+    allowNestedContextOnce(testRootDisposable)
     doTest('''\
 private void getCommonAncestor() {
     def c1 = [new File('a')]
@@ -596,7 +596,6 @@ private void getCommonAncestor() {
     }
 }
 ''', 'java.io.File')
-
   }
 
   void testWildcardClosureParam() {
@@ -741,6 +740,7 @@ class Any {
   }
 
   void testRecursionWithMaps() {
+    allowNestedContext(2, testRootDisposable)
     doTest('''
 def foo(Map map) {
   while(true)
@@ -750,6 +750,7 @@ def foo(Map map) {
   }
 
   void testRecursionWithLists() {
+    allowNestedContextOnce(testRootDisposable)
     doTest('''
 def foo(List list) {
   while(true)
@@ -828,12 +829,12 @@ def foo() {
   }
 
   void testClassReference() {
-    doExprTest '[].class', "java.lang.Class<java.util.List>"
+    doExprTest '[].class', "java.lang.Class<java.util.List<java.lang.Object>>"
     doExprTest '1.class', 'java.lang.Class<java.lang.Integer>'
     doExprTest 'String.valueOf(1).class', 'java.lang.Class<java.lang.String>'
     doExprTest '1.getClass()', 'java.lang.Class<? extends java.lang.Integer>'
 
-    doCSExprTest '[].class', "java.lang.Class<java.util.List>"
+    doCSExprTest '[].class', "java.lang.Class<java.util.List<java.lang.Object>>"
     doCSExprTest '1.class', 'java.lang.Class<java.lang.Integer>'
     doCSExprTest 'String.valueOf(1).class', 'java.lang.Class<java.lang.String>'
     doCSExprTest '1.getClass()', 'java.lang.Class<? extends java.lang.Integer>'
@@ -848,7 +849,7 @@ def foo() {
   }
 
   void 'test list literal type'() {
-    doExprTest '[]', 'java.util.List'
+    doExprTest '[]', 'java.util.List<java.lang.Object>'
     doExprTest '[null]', 'java.util.List'
     doExprTest '["foo", "bar"]', 'java.util.List<java.lang.String>'
     doExprTest '["${foo}", "${bar}"]', 'java.util.List<groovy.lang.GString>'
@@ -951,5 +952,78 @@ class W {
 
   void 'test spread asImmutable()'() {
     doExprTest('List<List<String>> a; a*.asImmutable()', 'java.util.ArrayList<java.util.List<java.lang.String>>')
+  }
+
+  void "test don't start inference for method parameter type"() {
+    doTest 'def bar(String ss) { <caret>ss }', 'java.lang.String'
+  }
+
+  void 'test closure param'() {
+    doTest '''\
+interface I { def foo(String s) }
+def bar(I i) {}
+bar { var ->
+  <caret>var
+}
+''', 'java.lang.String'
+  }
+
+  void 'test assignment in cycle independent on index'() {
+    doTest '''\
+def foo
+for (def i = 1; i < 10; i++) {
+  foo = 2
+  <caret>foo
+}
+''', 'java.lang.Integer'
+  }
+
+  void 'test assignment in cycle depending on index'() {
+    allowNestedContextOnce(testRootDisposable)
+    doTest '''\
+def foo
+for (def i = 1; i < 10; i++) {
+  foo = i
+  <caret>foo
+}
+''', 'java.lang.Integer'
+  }
+
+  void 'test java field passed as argument to overloaded method'() {
+    fixture.addClass '''\
+public interface I {}
+'''
+    fixture.addClass '''\
+public class SuperClass {
+  public I myField;
+}
+'''
+    doTest '''\
+class A extends SuperClass {
+  
+  static void foo(I s) {}
+  static void foo(String s) {}
+  
+  def usage() {
+    foo(myField)
+    <caret>myField
+  }
+}
+''', 'I'
+  }
+
+  void 'test no soe argument instruction in cycle'() {
+    allowNestedContext(3, testRootDisposable)
+    doTest '''\
+static <U> void foo(U[] a, U[] b) {}
+
+String prevParent = null
+while (condition) {
+  String parent = null
+  foo(parent, prevParent)
+  prevParent = parent
+}
+<caret>prevParent
+''', 'java.lang.String'
   }
 }

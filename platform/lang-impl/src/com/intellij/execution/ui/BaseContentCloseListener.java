@@ -5,7 +5,6 @@ import com.intellij.execution.ExecutionBundle;
 import com.intellij.execution.TerminateRemoteProcessDialog;
 import com.intellij.execution.process.ProcessHandler;
 import com.intellij.ide.GeneralSettings;
-import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
@@ -13,7 +12,7 @@ import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.project.VetoableProjectManagerListener;
-import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.util.Key;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentManager;
 import com.intellij.ui.content.ContentManagerAdapter;
@@ -22,7 +21,9 @@ import com.intellij.util.concurrency.Semaphore;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public abstract class BaseContentCloseListener extends ContentManagerAdapter implements VetoableProjectManagerListener, Disposable {
+public abstract class BaseContentCloseListener extends ContentManagerAdapter implements VetoableProjectManagerListener {
+  private static final Key<Boolean> PROJECT_DISPOSING = Key.create("Project disposing is in progress");
+
   private Content myContent;
   private final Project myProject;
 
@@ -40,11 +41,10 @@ public abstract class BaseContentCloseListener extends ContentManagerAdapter imp
   public void contentRemoved(@NotNull final ContentManagerEvent event) {
     final Content content = event.getContent();
     if (content == myContent) {
-      Disposer.dispose(this);
+      dispose();
     }
   }
 
-  @Override
   public void dispose() {
     if (myContent == null) return;
 
@@ -61,10 +61,12 @@ public abstract class BaseContentCloseListener extends ContentManagerAdapter imp
   protected abstract void disposeContent(@NotNull Content content);
 
   @Override
-  public void contentRemoveQuery(@NotNull final ContentManagerEvent event) {
+  public void contentRemoveQuery(@NotNull ContentManagerEvent event) {
     if (event.getContent() == myContent) {
-      final boolean canClose = closeQuery(myContent, false);
+      boolean canClose = closeQuery(myContent, Boolean.TRUE.equals(myProject.getUserData(PROJECT_DISPOSING)));
       if (!canClose) {
+        // Consume the event to reject the close request:
+        //   com.intellij.ui.content.impl.ContentManagerImpl.fireContentRemoveQuery
         event.consume();
       }
     }
@@ -77,7 +79,12 @@ public abstract class BaseContentCloseListener extends ContentManagerAdapter imp
     if (contentManager != null) {
       contentManager.removeContent(myContent, true);
     }
-    Disposer.dispose(this); // Dispose content even if content manager refused to.
+    dispose(); // Dispose content even if content manager refused to.
+  }
+
+  @Override
+  public void projectClosing(@NotNull Project project) {
+    project.putUserData(PROJECT_DISPOSING, true);
   }
 
   @Override
@@ -109,7 +116,13 @@ public abstract class BaseContentCloseListener extends ContentManagerAdapter imp
     return true;
   }
 
-  protected abstract boolean closeQuery(@NotNull Content content, boolean modal);
+  /**
+   * Checks if the specified {@code Content} instance can be closed/removed.
+   * @param content        {@code Content} instance the closing operation was requested for
+   * @param projectClosing true if the content's project is being closed
+   * @return true if the content can be closed, otherwise false
+   */
+  protected abstract boolean closeQuery(@NotNull Content content, boolean projectClosing);
 
   protected abstract static class WaitForProcessTask extends Task.Backgroundable {
     final ProcessHandler myProcessHandler;

@@ -57,6 +57,27 @@ public class VirtualFilePointersTreeTest extends LightPlatformTestCase {
     assertPointersUnder(dir2, "", parentPointer, dir2Pointer);
   }
 
+  public void testRecursivePointersUnderSiblingDirectory() {
+    VirtualFilePointer innerPointer = createRecursivePointer("file:///parent/dir/subdir1/inner/subinner");
+    createPointer("file:///parent/anotherDir");
+    LightVirtualFile root = new LightVirtualFile("/");
+    LightVirtualFile parent = new LightVirtualFileWithParent("parent", root);
+    LightVirtualFile dir = new LightVirtualFileWithParent("dir", parent);
+    LightVirtualFile subdir1 = new LightVirtualFileWithParent("subdir1", dir);
+    LightVirtualFile subdir2 = new LightVirtualFileWithParent("subdir2", dir);
+    assertPointersUnder(subdir1, "inner", innerPointer);
+    assertPointersUnder(subdir2, "xxx.txt");
+  }
+
+  public void testRecursivePointersUnderDisparateDirectoriesNearRoot() {
+    VirtualFilePointer innerPointer = createRecursivePointer("file:///temp/res/ext-resources");
+    LightVirtualFile root = new LightVirtualFile("/");
+    LightVirtualFile parent = new LightVirtualFileWithParent("parent", root);
+    LightVirtualFile dir = new LightVirtualFileWithParent("dir", parent);
+    assertPointersUnder(dir, "inner");
+    assertTrue(innerPointer.isRecursive());
+  }
+
   public void testUrlsHavingOnlyStartingSlashInCommon() {
     VirtualFilePointer p1 = createPointer("file:///a/p1");
     VirtualFilePointer p2 = createPointer("file:///b/p2");
@@ -78,7 +99,7 @@ public class VirtualFilePointersTreeTest extends LightPlatformTestCase {
     assertSameElements(myVirtualFilePointerManager.getPointersUnder(b, "p2"), p2);
   }
 
-  private void assertPointersUnder(LightVirtualFile file, String childName, VirtualFilePointer... pointers) {
+  private void assertPointersUnder(@NotNull LightVirtualFile file, @NotNull String childName, @NotNull VirtualFilePointer... pointers) {
     assertSameElements(myVirtualFilePointerManager.getPointersUnder(file, childName), pointers);
   }
 

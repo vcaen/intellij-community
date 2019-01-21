@@ -1,9 +1,10 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.jarRepository
 
 import com.intellij.codeInsight.ExternalAnnotationsArtifactsResolver
+import com.intellij.codeInsight.externalAnnotation.location.AnnotationsLocation
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.invokeAndWaitIfNeed
+import com.intellij.openapi.application.invokeAndWaitIfNeeded
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -49,10 +50,30 @@ class ExternalAnnotationsRepositoryResolver : ExternalAnnotationsArtifactsResolv
         as MutableList<OrderRoot>?
     }
 
-    invokeAndWaitIfNeed {
+    invokeAndWaitIfNeeded {
       updateLibrary(roots, mavenLibDescriptor, library)
     }
 
+    return library
+  }
+
+  override fun resolve(project: Project, library: Library, location: AnnotationsLocation): Library {
+    val descriptor = JpsMavenRepositoryLibraryDescriptor(location.groupId, location.artifactId, location.version, false)
+    val repos = if (location.repositoryUrls.isNotEmpty()) {
+      location.repositoryUrls.mapIndexed { index, url ->
+        val someUniqueId = "id_${url.hashCode()}_$index"
+        RemoteRepositoryDescription(someUniqueId, "name", url)
+      }
+    }
+    else {
+      null
+    }
+
+    val roots = JarRepositoryManager
+                  .loadDependenciesSync(project, descriptor, setOf(ArtifactKind.ANNOTATIONS), repos, null)
+                ?: return library
+
+    invokeAndWaitIfNeeded { updateLibrary(roots, descriptor, library) }
     return library
   }
 

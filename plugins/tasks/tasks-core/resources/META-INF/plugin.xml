@@ -6,7 +6,6 @@
   <id>com.intellij.tasks</id>
   <name>Task Management</name>
   <description>Enables task and context management</description>
-  <version>1.0</version>
   <vendor>JetBrains</vendor>
 
   <!--fake dependency for Web IDE-->
@@ -86,16 +85,6 @@
       <add-to-group group-id="MainToolBar" anchor="last"/>
       <add-to-group group-id="NavBarToolBarOthers" anchor="last"/>
     </group>
-
-    <!--
-    <action id="tasks.trackContext" class="com.intellij.tasks.actions.AssociateWithTaskAction"
-            text="Associate with _Task"
-            description="Reload context (e.g. open editors) when changelist is set active">
-
-      <add-to-group group-id="ChangesViewPopupMenu" relative-to-action="ChangesView.SetDefault" anchor="after"/>
-    </action>
-    -->
-
   </actions>
 
   <extensionPoints>
@@ -115,6 +104,7 @@
 
     <projectService serviceImplementation="com.intellij.tasks.impl.TaskProjectConfiguration"/>
     <applicationService serviceImplementation="com.intellij.tasks.config.RecentTaskRepositories"/>
+    <applicationInitializedListener implementation="com.intellij.tasks.config.PasswordConversionEnforcer"/>
     <applicationService serviceImplementation="com.intellij.tasks.config.TaskSettings"/>
     <search.optionContributor implementation="com.intellij.tasks.config.TaskSearchableOptionContributor"/>
 
@@ -144,7 +134,6 @@
     <annotator language="JQL" implementationClass="com.intellij.tasks.jira.jql.codeinsight.JqlAnnotator"/>
 
     <checkinHandlerFactory implementation="com.intellij.tasks.impl.TaskCheckinHandlerFactory"/>
-    <vcs.commitMessageProvider implementation="com.intellij.tasks.impl.TaskCommitMessageProvider"/>
     <!-- YouTrack support -->
     <!--<annotator language="TEXT" implementationClass="com.intellij.tasks.youtrack.lang.YouTrackHighlightingAnnotator"/>-->
     <lang.parserDefinition language="YouTrack" implementationClass="com.intellij.tasks.youtrack.lang.YouTrackParserDefinition"/>

@@ -81,7 +81,8 @@ import com.intellij.openapi.progress.ProcessCanceledException;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ModuleRootManager;
-import com.intellij.openapi.roots.ex.ProjectRootManagerEx;
+import com.intellij.openapi.roots.ProjectRootManager;
+import com.intellij.openapi.roots.impl.ProjectRootManagerImpl;
 import com.intellij.openapi.util.*;
 import com.intellij.openapi.util.io.FileUtil;
 import com.intellij.openapi.util.registry.Registry;
@@ -161,6 +162,7 @@ public class CodeInsightTestFixtureImpl extends BaseFixture implements CodeInsig
   private boolean myAllowDirt;
   private boolean myCaresAboutInjection = true;
   private VirtualFilePointerTracker myVirtualFilePointerTracker;
+  private ResourceBundle[] myMessageBundles = new ResourceBundle[0];
 
   public CodeInsightTestFixtureImpl(@NotNull IdeaProjectTestFixture projectFixture, @NotNull TempDirTestFixture tempDirTestFixture) {
     myProjectFixture = projectFixture;
@@ -353,10 +355,10 @@ public class CodeInsightTestFixtureImpl extends BaseFixture implements CodeInsig
   private static void assertFileEndsWithCaseSensitivePath(@Nullable File sourceFile) {
     if (sourceFile == null) return;
     try {
-      String sourceName = sourceFile.getName();
+      String sourceName = sourceFile.getPath();
       File realFile = sourceFile.getCanonicalFile();
-      String realFileName = realFile.getName();
-      if (sourceName.equalsIgnoreCase(realFileName) && !sourceName.equals(realFileName)) {
+      String realFileName = realFile.getPath();
+      if (!sourceName.equals(realFileName) && sourceName.equalsIgnoreCase(realFileName)) {
         fail("Please correct case-sensitivity of path to prevent test failure on case-sensitive file systems:\n" +
              "     path " + sourceFile.getPath() + "\n" +
              "real path " + realFile.getPath());
@@ -478,7 +480,8 @@ public class CodeInsightTestFixtureImpl extends BaseFixture implements CodeInsig
       assertNotNull(psiFile);
       Document document = PsiDocumentManager.getInstance(getProject()).getDocument(psiFile);
       assertNotNull(document);
-      ExpectedHighlightingData datum = new ExpectedHighlightingData(document, checkWarnings, checkWeakWarnings, checkInfos, psiFile);
+      ExpectedHighlightingData datum =
+        new ExpectedHighlightingData(document, checkWarnings, checkWeakWarnings, checkInfos, false, psiFile, myMessageBundles);
       datum.init();
       return Trinity.create(psiFile, createEditor(file), datum);
     }).collect(Collectors.toList());
@@ -524,7 +527,8 @@ public class CodeInsightTestFixtureImpl extends BaseFixture implements CodeInsig
       public HighlightTestInfo doTest() {
         configureByFiles(filePaths);
         ExpectedHighlightingData data =
-          new ExpectedHighlightingData(myEditor.getDocument(), checkWarnings, checkWeakWarnings, checkInfos, getFile());
+          new ExpectedHighlightingData(myEditor.getDocument(), checkWarnings, checkWeakWarnings, checkInfos, false, getFile(),
+                                       myMessageBundles);
         if (checkSymbolNames) data.checkSymbolNames();
         data.init();
         collectAndCheckHighlighting(data);
@@ -1190,8 +1194,8 @@ public class CodeInsightTestFixtureImpl extends BaseFixture implements CodeInsig
         closeOpenFiles();
         if (project != null) {
           ((DaemonCodeAnalyzerImpl)DaemonCodeAnalyzer.getInstance(project)).cleanupAfterTest();
-          // clear order entry roots cache
-          WriteAction.run(() -> ProjectRootManagerEx.getInstanceEx(project).makeRootsChange(EmptyRunnable.getInstance(), false, true));
+          // needed for myVirtualFilePointerTracker check below
+          ((ProjectRootManagerImpl)ProjectRootManager.getInstance(project)).clearScopesCachesForModules();
         }
       }))
       .append(() -> {
@@ -1417,7 +1421,7 @@ public class CodeInsightTestFixtureImpl extends BaseFixture implements CodeInsig
                                            boolean checkWeakWarnings,
                                            boolean ignoreExtraHighlighting) {
     ExpectedHighlightingData data = new ExpectedHighlightingData(
-      myEditor.getDocument(), checkWarnings, checkWeakWarnings, checkInfos, ignoreExtraHighlighting, getHostFile());
+      myEditor.getDocument(), checkWarnings, checkWeakWarnings, checkInfos, ignoreExtraHighlighting, getHostFile(), myMessageBundles);
     data.init();
     return collectAndCheckHighlighting(data);
   }
@@ -1427,7 +1431,7 @@ public class CodeInsightTestFixtureImpl extends BaseFixture implements CodeInsig
     return ReadAction.compute(() -> PsiManager.getInstance(getProject()).findFile(hostVFile));
   }
 
-  private long collectAndCheckHighlighting(@NotNull ExpectedHighlightingData data) {
+  public long collectAndCheckHighlighting(@NotNull ExpectedHighlightingData data) {
     final Project project = getProject();
     EdtTestUtil.runInEdtAndWait(() -> PsiDocumentManager.getInstance(project).commitAllDocuments());
 
@@ -1471,6 +1475,10 @@ public class CodeInsightTestFixtureImpl extends BaseFixture implements CodeInsig
 
   public void setVirtualFileFilter(@Nullable VirtualFileFilter filter) {
     myVirtualFileFilter = filter;
+  }
+
+  public void setMessageBundles(@NotNull ResourceBundle... messageBundles) {
+    myMessageBundles = messageBundles;
   }
 
   @Override

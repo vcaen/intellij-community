@@ -71,8 +71,8 @@ internal class GithubPullRequestStatePanel(private val stateService: GithubPullR
   }
 
   var state: GithubPullRequestStatePanel.State? by equalVetoingObservable<GithubPullRequestStatePanel.State?>(null) {
-    updateText(state)
-    updateActions(state)
+    updateText(it)
+    updateActions(it)
   }
 
   private fun updateText(state: GithubPullRequestStatePanel.State?) {
@@ -141,9 +141,11 @@ internal class GithubPullRequestStatePanel(private val stateService: GithubPullR
       closeAction.isEnabled = closeButton.isVisible && !busy
 
       mergeButton.isVisible = state.editAllowed && state.state == GithubIssueState.open && !state.merged
-      mergeAction.isEnabled = mergeButton.isVisible && (state.mergeable ?: false) && !busy
-      rebaseMergeAction.isEnabled = mergeButton.isVisible && (state.rebaseable ?: false) && !busy
-      squashMergeAction.isEnabled = mergeButton.isVisible && (state.mergeable ?: false) && !busy
+      mergeAction.isEnabled = mergeButton.isVisible && (state.mergeable ?: false) && !busy && !state.mergeForbidden
+      rebaseMergeAction.isEnabled = mergeButton.isVisible && (state.rebaseable ?: false) && !busy && !state.mergeForbidden
+      squashMergeAction.isEnabled = mergeButton.isVisible && (state.mergeable ?: false) && !busy && !state.mergeForbidden
+
+      mergeButton.optionTooltipText = if (state.mergeForbidden) "Merge actions are disabled for this project" else null
 
       val allowedActions = mutableListOf<Action>()
       if (state.mergeAllowed) allowedActions.add(mergeAction)
@@ -167,16 +169,20 @@ internal class GithubPullRequestStatePanel(private val stateService: GithubPullR
   data class State(val number: Long, val state: GithubIssueState, val merged: Boolean, val mergeable: Boolean?, val rebaseable: Boolean?,
                    val editAllowed: Boolean, val currentUserIsAuthor: Boolean,
                    val busy: Boolean,
-                   val mergeAllowed: Boolean, val rebaseMergeAllowed: Boolean, val squashMergeAllowed: Boolean) {
+                   val mergeAllowed: Boolean,
+                   val rebaseMergeAllowed: Boolean,
+                   val squashMergeAllowed: Boolean,
+                   val mergeForbidden: Boolean) {
     companion object {
       fun create(user: GithubAuthenticatedUser,
                  repo: GithubRepoDetailed,
                  details: GithubPullRequestDetailed,
-                 busy: Boolean) = details.let {
+                 busy: Boolean,
+                 mergeForbidden: Boolean) = details.let {
         State(it.number, it.state, it.merged, it.mergeable, it.rebaseable,
               repo.permissions.isAdmin || repo.permissions.isPush, it.user == user,
               busy,
-              repo.allowMergeCommit, repo.allowRebaseMerge, repo.allowSquashMerge)
+              repo.allowMergeCommit, repo.allowRebaseMerge, repo.allowSquashMerge, mergeForbidden)
       }
     }
   }

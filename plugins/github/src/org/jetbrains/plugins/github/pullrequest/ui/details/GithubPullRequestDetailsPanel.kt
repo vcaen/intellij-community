@@ -20,6 +20,7 @@ import org.jetbrains.plugins.github.api.data.GithubPullRequestDetailedWithHtml
 import org.jetbrains.plugins.github.api.data.GithubRepoDetailed
 import org.jetbrains.plugins.github.pullrequest.avatars.CachingGithubAvatarIconsProvider
 import org.jetbrains.plugins.github.pullrequest.data.service.GithubPullRequestsStateService
+import org.jetbrains.plugins.github.util.GithubSharedProjectSettings
 import java.awt.Graphics
 import java.awt.event.AdjustmentListener
 import javax.swing.BorderFactory
@@ -27,7 +28,8 @@ import javax.swing.JPanel
 import kotlin.properties.Delegates
 
 
-internal class GithubPullRequestDetailsPanel(private val stateService: GithubPullRequestsStateService,
+internal class GithubPullRequestDetailsPanel(private val sharedProjectSettings: GithubSharedProjectSettings,
+                                             private val stateService: GithubPullRequestsStateService,
                                              iconProviderFactory: CachingGithubAvatarIconsProvider.Factory,
                                              private val accountDetails: GithubAuthenticatedUser,
                                              private val repoDetails: GithubRepoDetailed)
@@ -52,20 +54,21 @@ internal class GithubPullRequestDetailsPanel(private val stateService: GithubPul
   var details: GithubPullRequestDetailedWithHtml?
     by Delegates.observable<GithubPullRequestDetailedWithHtml?>(null) { _, _, newValue ->
       descriptionPanel.description = newValue?.bodyHtml
-      metaPanel.direction = newValue?.let { it.base to it.head }
+      metaPanel.direction = newValue?.let { it.head to it.base }
       metaPanel.reviewers = newValue?.requestedReviewers
       metaPanel.assignees = newValue?.assignees
       metaPanel.labels = newValue?.labels
       statePanel.state = newValue?.let {
-        GithubPullRequestStatePanel.State.create(accountDetails, repoDetails, it, stateService.isBusy(it.number))
+        GithubPullRequestStatePanel.State.create(accountDetails, repoDetails, it, stateService.isBusy(it.number),
+                                                 sharedProjectSettings.pullRequestMergeForbidden)
       }
-      this@GithubPullRequestDetailsPanel.isVisible = details != null
     }
 
   init {
     layout = MigLayout(LC().flowY().fill()
                          .gridGap("0", "0")
                          .insets("0", "0", "0", "0"))
+    isOpaque = false
 
     val scrollPane = ScrollPaneFactory.createScrollPane(ScrollablePanel(VerticalFlowLayout(0, 0)).apply {
       add(metaPanel)
@@ -103,8 +106,8 @@ internal class GithubPullRequestDetailsPanel(private val stateService: GithubPul
 
   override fun getEmptyText() = emptyText
 
-  override fun paintChildren(g: Graphics) {
-    super.paintChildren(g)
+  override fun paintComponent(g: Graphics?) {
+    super.paintComponent(g)
     emptyText.paint(this, g)
   }
 

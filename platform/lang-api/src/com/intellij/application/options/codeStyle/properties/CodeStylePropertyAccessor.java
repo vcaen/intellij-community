@@ -1,6 +1,9 @@
 // Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.application.options.codeStyle.properties;
 
+import com.intellij.configurationStore.Property;
+import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.psi.codeStyle.CommonCodeStyleSettings;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -17,16 +20,18 @@ public abstract class CodeStylePropertyAccessor<T> {
     myField = field;
   }
 
-  public void set(@NotNull String str) {
+  public boolean set(@NotNull String str) {
     try {
       T value = parseString(str);
       if (value != null) {
         myField.set(myObject, value);
+        return true;
       }
     }
     catch (IllegalAccessException e) {
       // Ignore and skip
     }
+    return false;
   }
 
   @Nullable
@@ -58,6 +63,15 @@ public abstract class CodeStylePropertyAccessor<T> {
   protected abstract String asString(@NotNull T value);
 
   public String getPropertyName() {
+    Property descriptor = myField.getAnnotation(Property.class);
+    if (descriptor != null) {
+      String externalName = descriptor.externalName();
+      if (!StringUtil.isEmpty(externalName)) return externalName;
+    }
     return PropertyNameUtil.getPropertyName(myField.getName());
+  }
+
+  public boolean isGenericProperty() {
+    return myObject instanceof CommonCodeStyleSettings || myObject instanceof CommonCodeStyleSettings.IndentOptions;
   }
 }

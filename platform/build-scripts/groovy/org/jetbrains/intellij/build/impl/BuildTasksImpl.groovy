@@ -1,8 +1,9 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.intellij.build.impl
 
 import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.util.text.StringUtil
+import groovy.io.FileType
 import org.jetbrains.intellij.build.*
 import org.jetbrains.jps.model.artifact.JpsArtifactService
 import org.jetbrains.jps.model.java.JavaResourceRootType
@@ -88,7 +89,7 @@ class BuildTasksImpl extends BuildTasks {
       buildContext.messages.debug("Building provided modules list for the following modules: $modules")
       FileUtil.delete(new File(targetFilePath))
       // Start the product in headless mode using com.intellij.ide.plugins.BundledPluginsLister.
-      runApplicationStarter("$buildContext.paths.temp/builtinModules", modules, ['listBundledPlugins', targetFilePath])
+      runApplicationStarter(buildContext, "$buildContext.paths.temp/builtinModules", modules, ['listBundledPlugins', targetFilePath])
       if (!new File(targetFilePath).exists()) {
         buildContext.messages.error("Failed to build provided modules list: $targetFilePath doesn't exist")
       }
@@ -96,24 +97,7 @@ class BuildTasksImpl extends BuildTasks {
     })
   }
 
-  /**
-   * Build index which is used to search options in the Settings dialog.
-   */
-  void buildSearchableOptionsIndex(File targetDirectory, List<String> modulesToIndex) {
-    buildContext.executeStep("Build searchable options index", BuildOptions.SEARCHABLE_OPTIONS_INDEX_STEP, {
-      buildContext.messages.progress("Building searchable options for modules $modulesToIndex")
-      String targetFile = "${targetDirectory.absolutePath}/search/searchableOptions.xml"
-      FileUtil.delete(new File(targetFile))
-      // Start the product in headless mode using com.intellij.ide.ui.search.TraverseUIStarter.
-      // It'll process all UI elements in Settings dialog and build index for them.
-      runApplicationStarter("$buildContext.paths.temp/searchableOptions", modulesToIndex, ['traverseUI', targetFile])
-      if (!new File(targetFile).exists()) {
-        buildContext.messages.error("Failed to build searchable options index: $targetFile doesn't exist")
-      }
-    })
-  }
-
-  private void runApplicationStarter(String tempDir, List<String> modules, List<String> arguments) {
+  static void runApplicationStarter(BuildContext buildContext, String tempDir, List<String> modules, List<String> arguments) {
     def javaRuntimeClasses = "${buildContext.getModuleOutputPath(buildContext.findModule("intellij.java.rt"))}"
     if (!new File(javaRuntimeClasses).exists()) {
       buildContext.messages.error("Cannot run application starter ${arguments}, 'java-runtime' module isn't compiled ($javaRuntimeClasses doesn't exist)")
@@ -275,17 +259,12 @@ idea.fatal.error.notification=disabled
 
   private DistributionJARsBuilder compileModulesForDistribution(File patchedApplicationInfo) {
     def productLayout = buildContext.productProperties.productLayout
-    def moduleNames = productLayout.getIncludedPluginModules(productLayout.allBundledPluginsModules) +
-                      DistributionJARsBuilder.getPlatformApiModules(productLayout) +
-                      DistributionJARsBuilder.getPlatformImplModules(productLayout) +
-                      DistributionJARsBuilder.getProductApiModules(productLayout) +
-                      DistributionJARsBuilder.getProductImplModules(productLayout) +
-                      productLayout.additionalPlatformJars.values() +
-                      DistributionJARsBuilder.toolModules + buildContext.productProperties.additionalModulesToCompile
+    def moduleNames = DistributionJARsBuilder.getModulesToCompile(buildContext)
     compileModules(moduleNames + (buildContext.proprietaryBuildTools.scrambleTool?.additionalModulesToCompile ?: []) +
-                   productLayout.mainModules, buildContext.productProperties.modulesToCompileTests)
+                   productLayout.mainModules + buildContext.productProperties.mavenArtifacts.additionalModules,
+                   buildContext.productProperties.modulesToCompileTests)
 
-    def pluginsToPublish = new LinkedHashMap<PluginLayout, PluginPublishingSpec>();
+    def pluginsToPublish = new LinkedHashMap<PluginLayout, PluginPublishingSpec>()
     for (PluginLayout plugin  : DistributionJARsBuilder.getPluginsByModules(buildContext, buildContext.productProperties.productLayout.pluginModulesToPublish)) {
       def publishingSpec = buildContext.productProperties.productLayout.getPluginPublishingSpec(plugin.mainModule)
       if (publishingSpec == null) {
@@ -312,7 +291,7 @@ idea.fatal.error.notification=disabled
       }
     }
     def distributionJARsBuilder = new DistributionJARsBuilder(buildContext, patchedApplicationInfo, pluginsToPublish)
-    compileModules(distributionJARsBuilder.platformModules + (pluginsToPublish.collect { it.key.moduleJars.values()  }.flatten() as List<String>))
+    compileModules(distributionJARsBuilder.modulesForPluginsToPublish)
 
     //we need this to ensure that all libraries which may be used in the distribution are resolved, even if product modules don't depend on them (e.g. JUnit5)
     CompilationTasks.create(buildContext).resolveProjectDependencies()
@@ -345,6 +324,7 @@ idea.fatal.error.notification=disabled
       }
       else {
         buildContext.messages.info("Skipped building product distributions because 'intellij.build.target.os' property is set to '$BuildOptions.OS_NONE'")
+        distributionJARsBuilder.buildSearchableOptions()
         distributionJARsBuilder.buildNonBundledPlugins()
       }
     }
@@ -380,29 +360,29 @@ idea.fatal.error.notification=disabled
 
       List<String> paths = runInParallel(tasks).findAll { it != null }
 
-      if (buildContext.options.buildToolboxLiteGenLink) {
+      if (Boolean.getBoolean("intellij.build.toolbox.litegen")) {
         if (buildContext.buildNumber == null) {
           buildContext.messages.warning("Toolbox LiteGen is not executed - it does not support SNAPSHOT build numbers")
         }
         else {
           buildContext.executeStep("Building Toolbox Lite-Gen Links", BuildOptions.TOOLBOX_LITE_GEN_STEP) {
-            //NOTE[jo]: right now we assume all installer files are created under the same path - distDir
-            String distDir = buildContext.paths.artifacts
+            String toolboxLiteGenVersion = System.getProperty("intellij.build.toolbox.litegen.version")
+            if (toolboxLiteGenVersion == null) {
+              buildContext.messages.error("Toolbox Lite-Gen version is not specified!")
+            }
+            else {
+              String[] liteGenArgs = [
+                'runToolboxLiteGen',
+                "-Pintellij.build.toolbox.litegen.version=${toolboxLiteGenVersion}",
+                //NOTE[jo]: right now we assume all installer files are created under the same path
+                "-Pintellij.build.artifacts=${buildContext.paths.artifacts}",
+                "-Pintellij.build.productCode=${buildContext.productProperties.productCode}",
+                "-Pintellij.build.isEAP=${buildContext.applicationInfo.isEAP}",
+                "-Pintellij.build.output=${buildContext.paths.buildOutputRoot}/toolbox-lite-gen",
+              ]
 
-            //file paths depend on the fact it was EAP or not. We have to include the parameter
-            boolean isEAP = buildContext.applicationInfo.isEAP
-            String productCode = buildContext.productProperties.productCode
-            String tempDirectory = "${buildContext.paths.buildOutputRoot}/toolbox-lite-gen"
-
-            String[] liteGenArgs = [
-              'runToolboxLiteGen',
-              "-Pintellij.build.artifacts=$distDir",
-              "-Pintellij.build.productCode=$productCode",
-              "-Pintellij.build.isEAP=$isEAP",
-              "-Pintellij.build.output=$tempDirectory",
-            ]
-
-            buildContext.gradle.run('Run Toolbox LiteGen', liteGenArgs)
+              buildContext.gradle.run('Run Toolbox LiteGen', liteGenArgs)
+            }
           }
         }
       }
@@ -411,7 +391,12 @@ idea.fatal.error.notification=disabled
         if (paths.size() == 3) {
           buildContext.executeStep("Build cross-platform distribution", BuildOptions.CROSS_PLATFORM_DISTRIBUTION_STEP) {
             def crossPlatformBuilder = new CrossPlatformDistributionBuilder(buildContext)
-            crossPlatformBuilder.buildCrossPlatformZip(paths[0], paths[1], paths[2])
+            def monsterZip = crossPlatformBuilder.buildCrossPlatformZip(paths[0], paths[1], paths[2], ".portable")
+
+            Map<String, String> checkerConfig = buildContext.productProperties.versionCheckerConfig
+            if (checkerConfig != null) {
+              new ClassVersionChecker(checkerConfig).checkVersions(buildContext, new File(monsterZip))
+            }
           }
         }
         else {
@@ -420,6 +405,27 @@ idea.fatal.error.notification=disabled
       }
     }
     logFreeDiskSpace("after building distributions")
+  }
+
+  static def unpackPty4jNative(BuildContext buildContext, String distDir, String pty4jOsSubpackageName) {
+    def pty4jNativeDir = "$distDir/lib/pty4j-native"
+    def nativePkg = "resources/com/pty4j/native"
+    def includedNativePkg = StringUtil.trimEnd(nativePkg + "/" + StringUtil.notNullize(pty4jOsSubpackageName), '/')
+    buildContext.project.libraryCollection.findLibrary("pty4j").getFiles(JpsOrderRootType.COMPILED).each {
+      buildContext.ant.unzip(src: it, dest: pty4jNativeDir) {
+        buildContext.ant.patternset() {
+          include(name: "$includedNativePkg/**")
+        }
+        buildContext.ant.mapper(type: "glob", from: "$nativePkg/*", to: "*")
+      }
+    }
+    def files = []
+    new File(pty4jNativeDir).eachFileRecurse(FileType.FILES) { file ->
+      files << file
+    }
+    if (files.empty) {
+      buildContext.messages.error("Cannot layout pty4j native: no files extracted")
+    }
   }
 
   private void logFreeDiskSpace(String phase) {
@@ -537,7 +543,6 @@ idea.fatal.error.notification=disabled
     checkModules(layout.additionalPlatformJars.values(), "productProperties.productLayout.additionalPlatformJars")
     checkModules(layout.moduleExcludes.keySet(), "productProperties.productLayout.moduleExcludes")
     checkModules(layout.mainModules, "productProperties.productLayout.mainModules")
-    checkModules([layout.searchableOptionsModule], "productProperties.productLayout.searchableOptionsModule")
     checkProjectLibraries(layout.projectLibrariesToUnpackIntoMainJar, "productProperties.productLayout.projectLibrariesToUnpackIntoMainJar")
     def allBundledPlugins = layout.allBundledPluginsModules
     nonTrivialPlugins.findAll { allBundledPlugins.contains(it.mainModule) }.each { plugin ->
@@ -683,6 +688,7 @@ idea.fatal.error.notification=disabled
     CompilationTasks.create(buildContext).buildProjectArtifacts(jarsBuilder.includedProjectArtifacts)
     jarsBuilder.buildJARs()
     layoutShared()
+    unpackPty4jNative(buildContext, targetDirectory, null)
 
 /*
     //todo[nik] uncomment this to update os-specific files (e.g. in 'bin' directory) as well

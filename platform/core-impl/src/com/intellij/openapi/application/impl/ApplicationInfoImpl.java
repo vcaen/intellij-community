@@ -42,6 +42,7 @@ public class ApplicationInfoImpl extends ApplicationInfoEx {
   private String myFullVersionFormat;
   private String myBuildNumber;
   private String myApiVersion;
+  private String myVersionSuffix;
   private String myCompanyName = "JetBrains s.r.o.";
   private String myCopyrightStart = "2000";
   private String myShortCompanyName;
@@ -54,7 +55,6 @@ public class ApplicationInfoImpl extends ApplicationInfoEx {
   private String myProgressTailIconName;
   private Icon myProgressTailIcon;
   private int myProgressHeight = 2;
-  private int myProgressX = 1;
   private int myProgressY = 350;
   private int myLicenseOffsetY = 85;
   private String mySplashImageUrl;
@@ -131,7 +131,6 @@ public class ApplicationInfoImpl extends ApplicationInfoEx {
   private static final String ATTRIBUTE_ABOUT_COPYRIGHT_FOREGROUND_COLOR = "copyrightForeground";
   private static final String ATTRIBUTE_ABOUT_LINK_COLOR = "linkColor";
   private static final String ATTRIBUTE_PROGRESS_HEIGHT = "progressHeight";
-  private static final String ATTRIBUTE_PROGRESS_X = "progressX";
   private static final String ATTRIBUTE_PROGRESS_Y = "progressY";
   private static final String ATTRIBUTE_LICENSE_TEXT_OFFSET_Y = "licenseOffsetY";
   private static final String ATTRIBUTE_PROGRESS_TAIL_ICON = "progressTailIcon";
@@ -258,7 +257,9 @@ public class ApplicationInfoImpl extends ApplicationInfoEx {
     else {
       result = StringUtil.notNullize(myMajorVersion, "0") + '.' + StringUtil.notNullize(myMinorVersion, "0");
     }
-    if (isEAP()) result += " EAP";
+    if (!StringUtil.isEmpty(myVersionSuffix)) {
+      result += " " + myVersionSuffix;
+    }
     return result;
   }
 
@@ -334,10 +335,6 @@ public class ApplicationInfoImpl extends ApplicationInfoEx {
 
   public int getLicenseOffsetY() {
     return myLicenseOffsetY;
-  }
-
-  public int getProgressX() {
-    return myProgressX;
   }
 
   @Nullable
@@ -611,6 +608,10 @@ public class ApplicationInfoImpl extends ApplicationInfoEx {
       myFullVersionFormat = versionElement.getAttributeValue(ATTRIBUTE_FULL);
       myCodeName = versionElement.getAttributeValue(ATTRIBUTE_CODENAME);
       myEAP = Boolean.parseBoolean(versionElement.getAttributeValue(ATTRIBUTE_EAP));
+      myVersionSuffix = versionElement.getAttributeValue("suffix");
+      if (myVersionSuffix == null && myEAP) {
+        myVersionSuffix = "EAP";
+      }
     }
 
     Element companyElement = getChild(parentNode, ELEMENT_COMPANY);
@@ -670,11 +671,6 @@ public class ApplicationInfoImpl extends ApplicationInfoEx {
       v = logoElement.getAttributeValue(ATTRIBUTE_PROGRESS_HEIGHT);
       if (v != null) {
         myProgressHeight = Integer.parseInt(v);
-      }
-
-      v = logoElement.getAttributeValue(ATTRIBUTE_PROGRESS_X);
-      if (v != null) {
-        myProgressX = Integer.parseInt(v);
       }
 
       v = logoElement.getAttributeValue(ATTRIBUTE_PROGRESS_Y);
@@ -861,7 +857,7 @@ public class ApplicationInfoImpl extends ApplicationInfoEx {
     }
     else {
       myFUStatisticsSettingsUrl = "https://www.jetbrains.com/idea/statistics/fus-assistant.xml";
-      myEventLogSettingsUrl = "https://www.jetbrains.com/idea/statistics/fus-lion-v2-01-assistant.xml";
+      myEventLogSettingsUrl = "https://www.jetbrains.com/idea/statistics/fus-lion-v3-assistant.xml";
     }
 
     Element tvElement = getChild(parentNode, ELEMENT_JB_TV);
@@ -951,7 +947,7 @@ public class ApplicationInfoImpl extends ApplicationInfoEx {
   }
 
   public List<String> getEssentialPluginsIds() {
-    return Collections.unmodifiableList(Arrays.asList(myEssentialPluginsIds));
+    return ContainerUtil.immutableList(myEssentialPluginsIds);
   }
 
   private static class UpdateUrlsImpl implements UpdateUrls {

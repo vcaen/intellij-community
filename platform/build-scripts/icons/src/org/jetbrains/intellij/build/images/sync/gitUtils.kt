@@ -38,7 +38,7 @@ private fun listGitTree(
     execute(repo, GIT, "pull", "--rebase")
   }
   catch (e: Exception) {
-    callSafely {
+    callSafely(printStackTrace = false) {
       execute(repo, GIT, "rebase", "--abort")
     }
     log("Unable to pull changes for $repo: ${e.message}")
@@ -141,6 +141,8 @@ internal fun commitAndPush(repo: File, branch: String, message: String): String 
   push(repo, "$branch:$branch")
   return commitInfo(repo)?.hash ?: error("Unable to read last commit")
 }
+
+internal fun checkout(repo: File, branch: String) = execute(repo, GIT, "checkout", branch)
 
 internal fun deleteBranch(repo: File, branch: String) {
   try {
@@ -263,7 +265,7 @@ private fun isMergeOfMasterIntoMaster(repo: File, merge: CommitInfo) =
 private var heads = emptyMap<File, String>()
 private val headsGuard = Any()
 
-private fun head(repo: File): String {
+internal fun head(repo: File): String {
   if (!heads.containsKey(repo)) {
     synchronized(headsGuard) {
       if (!heads.containsKey(repo)) {
@@ -303,7 +305,7 @@ internal data class CommitInfo(
 )
 
 internal fun <T> withUser(repo: File, user: String, email: String, block: () -> T): T {
-  val (originalUser, originalEmail) = callSafely {
+  val (originalUser, originalEmail) = callSafely(printStackTrace = false) {
     execute(repo, GIT, "config", "user.name").removeSuffix(System.lineSeparator()) to
       execute(repo, GIT, "config", "user.email").removeSuffix(System.lineSeparator())
   } ?: "" to ""
@@ -323,8 +325,8 @@ private fun configureUser(repo: File, user: String, email: String) {
   execute(repo, GIT, "config", "user.email", email)
 }
 
-internal fun gitStatus(repo: File) =
-  execute(repo, GIT, "status", "--short", "--untracked-files=no", "--ignored=no")
+internal fun gitStatus(repo: File, includeUntracked: Boolean = false) =
+  execute(repo, GIT, "status", "--short", "--untracked-files=${if (includeUntracked) "all" else "no"}", "--ignored=no")
     .lineSequence()
     .map(String::trim)
     .filter(String::isNotEmpty)
@@ -335,8 +337,6 @@ internal fun gitStatus(repo: File) =
 
 internal fun gitStage(repo: File) = execute(repo, GIT, "diff", "--cached", "--name-status")
 
-internal enum class ChangeType { MODIFIED, ADDED, DELETED }
-
 internal fun changesFromCommit(repo: File, hash: String) =
   execute(repo, GIT, "show", "--pretty=format:none", "--name-status", "--no-renames", hash)
     .lineSequence().map { it.trim() }
@@ -346,10 +346,10 @@ internal fun changesFromCommit(repo: File, hash: String) =
     .map {
       val (type, path) = it
       when (type) {
-        "A" -> ChangeType.ADDED
-        "D" -> ChangeType.DELETED
-        "M" -> ChangeType.MODIFIED
-        "T" -> ChangeType.MODIFIED
+        "A" -> Changes.Type.ADDED
+        "D" -> Changes.Type.DELETED
+        "M" -> Changes.Type.MODIFIED
+        "T" -> Changes.Type.MODIFIED
         else -> return@map null
       } to path
     }.filterNotNull().groupBy({ it.first }, { it.second })

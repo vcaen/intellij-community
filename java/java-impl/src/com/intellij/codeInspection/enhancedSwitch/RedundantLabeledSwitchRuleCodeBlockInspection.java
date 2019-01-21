@@ -1,12 +1,11 @@
 // Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.codeInspection.enhancedSwitch;
 
+import com.intellij.codeInsight.daemon.impl.analysis.HighlightUtil;
 import com.intellij.codeInspection.*;
 import com.intellij.openapi.project.Project;
-import com.intellij.pom.java.LanguageLevel;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
-import com.intellij.psi.util.PsiUtil;
 import com.intellij.util.ObjectUtils;
 import com.siyeh.ig.psiutils.CommentTracker;
 import org.jetbrains.annotations.Nls;
@@ -22,7 +21,7 @@ public class RedundantLabeledSwitchRuleCodeBlockInspection extends LocalInspecti
   @NotNull
   @Override
   public PsiElementVisitor buildVisitor(@NotNull ProblemsHolder holder, boolean isOnTheFly) {
-    if (!PsiUtil.getLanguageLevel(holder.getFile()).isAtLeast(LanguageLevel.JDK_12_PREVIEW)) {
+    if (!HighlightUtil.Feature.ENHANCED_SWITCH.isAvailable(holder.getFile())) {
       return PsiElementVisitor.EMPTY_VISITOR;
     }
     return new JavaElementVisitor() {
@@ -94,8 +93,14 @@ public class RedundantLabeledSwitchRuleCodeBlockInspection extends LocalInspecti
     private static void unwrapBreakValue(PsiStatement body, PsiBreakStatement breakStatement) {
       PsiExpression valueExpression = breakStatement.getValueExpression();
       if (valueExpression != null) {
+        PsiElementFactory factory = JavaPsiFacade.getElementFactory(body.getProject());
+        PsiExpressionStatement statement = (PsiExpressionStatement)factory.createStatementFromText("x=1;", body);
+        statement.getExpression().replace(valueExpression);
+
         CommentTracker tracker = new CommentTracker();
-        tracker.replaceAndRestoreComments(body, tracker.text(valueExpression) + ';');
+        // replaceAndRestoreComments() will work with a copy of the expression so it won't see the original comments
+        tracker.markUnchanged(valueExpression);
+        tracker.replaceAndRestoreComments(body, statement);
       }
     }
 

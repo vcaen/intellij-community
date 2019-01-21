@@ -54,11 +54,11 @@ internal fun <T> List<T>.split(eachSize: Int): List<List<T>> {
   return result
 }
 
-internal fun <T> callSafely(call: () -> T): T? = try {
+internal fun <T> callSafely(printStackTrace: Boolean = false, call: () -> T): T? = try {
   call()
 }
 catch (e: Exception) {
-  log(e.message ?: e::class.java.simpleName)
+  if (printStackTrace) e.printStackTrace() else log(e.message ?: e::class.java.simpleName)
   null
 }
 
@@ -91,4 +91,14 @@ internal fun <T> retry(maxRetries: Int = 20,
     }
   }
   error("Unable to complete")
+}
+
+internal fun guessEmail(invalidEmail: String): Collection<String> {
+  val (username, domain) = invalidEmail.split("@")
+  val guesses = mutableListOf(
+    username.splitNotBlank(".").joinToString(".", transform = String::capitalize) + "@$domain",
+    invalidEmail.toLowerCase()
+  )
+  if (domain != "jetbrains.com") guesses += "$username@jetbrains.com"
+  return guesses
 }

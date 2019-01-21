@@ -48,6 +48,8 @@ public class MyPluginModel extends InstalledPluginsTableModel implements PluginM
 
   private StatusBarEx myStatusBar;
 
+  private PluginUpdatesService myPluginUpdatesService;
+
   public MyPluginModel() {
     Window window = ProjectUtil.getActiveFrameOrWelcomeScreen();
     myStatusBar = getStatusBar(window);
@@ -118,6 +120,10 @@ public class MyPluginModel extends InstalledPluginsTableModel implements PluginM
     if (!myInstallingInfos.isEmpty()) {
       myTopController.showProgress(true);
     }
+  }
+
+  public void setPluginUpdatesService(@NotNull PluginUpdatesService service) {
+    myPluginUpdatesService = service;
   }
 
   @NotNull
@@ -277,7 +283,7 @@ public class MyPluginModel extends InstalledPluginsTableModel implements PluginM
       if (myUpdates != null) {
         myUpdates.titleWithCount();
       }
-      PluginUpdatesService.finishUpdate(descriptor);
+      myPluginUpdatesService.finishUpdate(descriptor);
     }
 
     info.indicator.cancel();
@@ -340,7 +346,7 @@ public class MyPluginModel extends InstalledPluginsTableModel implements PluginM
 
   private void appendDependsAfterInstall() {
     for (IdeaPluginDescriptor descriptor : InstalledPluginsState.getInstance().getInstalledPlugins()) {
-      if (myDownloaded.ui.findComponent(descriptor) != null) {
+      if (myDownloaded != null && myDownloaded.ui != null && myDownloaded.ui.findComponent(descriptor) != null) {
         continue;
       }
 
@@ -436,8 +442,7 @@ public class MyPluginModel extends InstalledPluginsTableModel implements PluginM
       if (result == null && PluginManagerCore.isModuleDependency(pluginId)) {
         result = ContainerUtil.find(allPlugins, d -> {
           if (d instanceof IdeaPluginDescriptorImpl) {
-            List<String> modules = ((IdeaPluginDescriptorImpl)d).getModules();
-            return modules != null && modules.contains(pluginId.getIdString());
+            return ((IdeaPluginDescriptorImpl)d).getModules().contains(pluginId.getIdString());
           }
           return false;
         });

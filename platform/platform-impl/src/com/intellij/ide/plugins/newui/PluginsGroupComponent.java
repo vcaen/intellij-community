@@ -85,7 +85,9 @@ public class PluginsGroupComponent extends JBPanelWithEmptyText {
             int fromIndex = group.ui.plugins.size();
             int toIndex = Math.min(fromIndex + gapSize, group.descriptors.size());
             int uiIndex = getComponentIndex(group.ui.plugins.get(fromIndex - 1));
+            PluginLogo.startBatchMode();
             addToGroup(group, group.descriptors.subList(fromIndex, toIndex), uiIndex);
+            PluginLogo.endBatchMode();
 
             if (group.descriptors.size() == group.ui.plugins.size()) {
               scrollBar.removeAdjustmentListener(this);
@@ -112,7 +114,7 @@ public class PluginsGroupComponent extends JBPanelWithEmptyText {
     myGroups.add(groupIndex == -1 ? myGroups.size() : groupIndex, uiGroup);
 
     OpaquePanel panel = new OpaquePanel(new BorderLayout(), SECTION_HEADER_BACKGROUND);
-    panel.setBorder(JBUI.Borders.empty(4, 13));
+    panel.setBorder(JBUI.Borders.empty(4, 10));
 
     JLabel title = new JLabel(group.title) {
       @Override

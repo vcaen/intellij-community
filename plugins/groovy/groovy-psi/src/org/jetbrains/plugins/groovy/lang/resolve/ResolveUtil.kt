@@ -27,7 +27,7 @@ import org.jetbrains.plugins.groovy.lang.resolve.imports.importedNameKey
 import org.jetbrains.plugins.groovy.lang.resolve.processors.DynamicMembersHint
 import org.jetbrains.plugins.groovy.lang.resolve.processors.GroovyResolveKind
 
-val log: Logger = logger(::log)
+val log: Logger = logger("#org.jetbrains.plugins.groovy.lang.resolve")
 
 @JvmField
 val NON_CODE: Key<Boolean?> = Key.create("groovy.process.non.code.members")
@@ -167,5 +167,19 @@ fun getResolveKind(element: PsiNamedElement): GroovyResolveKind? {
     is PsiVariable -> GroovyResolveKind.VARIABLE
     is GroovyProperty -> GroovyResolveKind.PROPERTY
     else -> null
+  }
+}
+
+fun GroovyResolveResult?.asJavaClassResult(): PsiClassType.ClassResolveResult {
+  if (this == null) return PsiClassType.ClassResolveResult.EMPTY
+  val clazz = element as? PsiClass ?: return PsiClassType.ClassResolveResult.EMPTY
+  return object : PsiClassType.ClassResolveResult {
+    override fun getElement(): PsiClass? = clazz
+    override fun getSubstitutor(): PsiSubstitutor = this@asJavaClassResult.substitutor
+    override fun isPackagePrefixPackageReference(): Boolean = false
+    override fun isAccessible(): Boolean = true
+    override fun isStaticsScopeCorrect(): Boolean = true
+    override fun getCurrentFileResolveScope(): PsiElement? = null
+    override fun isValidResult(): Boolean = true
   }
 }

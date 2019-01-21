@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.intellij.build
 
 import groovy.transform.CompileStatic
@@ -12,6 +12,10 @@ import static org.jetbrains.intellij.build.impl.PluginLayout.plugin
  */
 @CompileStatic
 class CommunityRepositoryModules {
+  /**
+   * @deprecated use {@link ProductModulesLayout#productApiModules} instead of {@link ProductModulesLayout#platformApiModules} to avoid
+   * using this property
+   */
   static List<String> PLATFORM_API_MODULES = [
     "intellij.platform.analysis",
     "intellij.platform.builtInServer",
@@ -41,6 +45,10 @@ class CommunityRepositoryModules {
     "intellij.xml.structureView",
   ]
 
+  /**
+   * @deprecated use {@link ProductModulesLayout#productImplementationModules} instead of {@link ProductModulesLayout#platformImplementationModules}
+   * to avoid using this property
+   */
   static List<String> PLATFORM_IMPLEMENTATION_MODULES = [
     "intellij.platform.analysis.impl",
     "intellij.platform.builtInServer.impl",
@@ -119,6 +127,7 @@ class CommunityRepositoryModules {
     plugin("intellij.tasks.core") {
       directoryName = "tasks"
       withModule("intellij.tasks")
+      withModule("intellij.tasks.compatibility")
       withModule("intellij.tasks.jira")
       withOptionalModule("intellij.tasks.java")
       doNotCreateSeparateJarForLocalizableResources()
@@ -128,13 +137,11 @@ class CommunityRepositoryModules {
       withModule("intellij.xslt.debugger.engine.impl", "rt/xslt-debugger-engine-impl.jar")
       withModuleLibrary("Saxon-6.5.5", "intellij.xslt.debugger.engine.impl", "rt")
       withModuleLibrary("Saxon-9HE", "intellij.xslt.debugger.engine.impl", "rt")
-      withModuleLibrary("Xalan-2.7.1", "intellij.xslt.debugger.engine.impl", "rt")
+      withModuleLibrary("Xalan-2.7.2", "intellij.xslt.debugger.engine.impl", "rt")
       //todo[nik] unmark 'lib' directory as source root instead
       excludeFromModule("intellij.xslt.debugger.engine.impl", "rmi-stubs.jar")
       excludeFromModule("intellij.xslt.debugger.engine.impl", "saxon.jar")
       excludeFromModule("intellij.xslt.debugger.engine.impl", "saxon9he.jar")
-      excludeFromModule("intellij.xslt.debugger.engine.impl", "serializer.jar")
-      excludeFromModule("intellij.xslt.debugger.engine.impl", "xalan.jar")
     },
     plugin("intellij.maven") {
       withModule("intellij.maven.jps")
@@ -153,8 +160,6 @@ class CommunityRepositoryModules {
       withResource("maven3-server-impl/lib/maven3", "lib/maven3")
       withResource("maven3-server-common/lib", "lib/maven3-server-lib")
       withResource("maven2-server-impl/lib/maven2", "lib/maven2")
-      withModuleLibrary("JAXB", "intellij.maven.server.m2.impl", "maven2-server-lib")
-      withModuleLibrary("javax-activation", "intellij.maven.server.m2.impl", "maven2-server-lib")
       [
         "archetype-common-2.0-alpha-4-SNAPSHOT.jar",
         "commons-beanutils.jar",
@@ -213,12 +218,11 @@ class CommunityRepositoryModules {
     plugin("intellij.cucumber.java") {
       withModule("intellij.cucumber.jvmFormatter")
       withModule("intellij.cucumber.jvmFormatter3")
-      withResource("../../community/lib/cucumber-core-1.2.4.jar", "lib")
-      withResource("../../community/lib/gherkin-2.12.2.jar", "lib")
+      withModule("intellij.cucumber.jvmFormatter4")
+      withProjectLibrary("cucumber-core")
       doNotCreateSeparateJarForLocalizableResources()
     },
     plugin("intellij.cucumber.groovy") {
-      withResource("../../community/lib/cucumber-core-1.2.4.jar", "lib")//todo[nik] fix dependencies instead
       doNotCreateSeparateJarForLocalizableResources()
     },
     plugin("intellij.java.decompiler") {

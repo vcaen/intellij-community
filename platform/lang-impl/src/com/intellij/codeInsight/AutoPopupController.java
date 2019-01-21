@@ -75,7 +75,7 @@ public class AutoPopupController implements Disposable {
   private void setupListeners() {
     ApplicationManager.getApplication().getMessageBus().connect(this).subscribe(AnActionListener.TOPIC, new AnActionListener() {
       @Override
-      public void beforeActionPerformed(@NotNull AnAction action, @NotNull DataContext dataContext, AnActionEvent event) {
+      public void beforeActionPerformed(@NotNull AnAction action, @NotNull DataContext dataContext, @NotNull AnActionEvent event) {
         cancelAllRequests();
       }
 
@@ -172,7 +172,7 @@ public class AutoPopupController implements Disposable {
 
       Runnable request = () -> {
         if (!myProject.isDisposed() && !DumbService.isDumb(myProject) && !editor.isDisposed() &&
-            (ApplicationManager.getApplication().isUnitTestMode() || editor.getComponent().isShowing())) {
+            (ApplicationManager.getApplication().isHeadlessEnvironment() || editor.getComponent().isShowing())) {
           int lbraceOffset = editor.getCaretModel().getOffset() - 1;
           try {
             PsiFile file1 = PsiDocumentManager.getInstance(myProject).getPsiFile(editor.getDocument());

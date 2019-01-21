@@ -796,7 +796,7 @@ public class HighlightUtil extends HighlightUtilBase {
         return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(statement).descriptionAndTooltip(message).create();
       }
     }
-    else if (expression != null && !plainRef) {
+    else if (expression != null && (!plainRef || ((PsiReferenceExpression)expression).resolve() instanceof PsiVariable)) {
       String message = JavaErrorMessages.message("value.break.unexpected");
       return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(statement).descriptionAndTooltip(message).create();
     }
@@ -805,13 +805,13 @@ public class HighlightUtil extends HighlightUtilBase {
   }
 
   @Nullable
-  static HighlightInfo checkContinueOutsideLoop(@NotNull PsiContinueStatement statement) {
+  static HighlightInfo checkContinueOutsideLoop(@NotNull PsiContinueStatement statement, LanguageLevel languageLevel) {
     if (PsiImplUtil.findEnclosingLoop(statement) == null) {
       String message = JavaErrorMessages.message("continue.outside.loop");
       return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(statement).descriptionAndTooltip(message).create();
     }
 
-    return null;
+    return checkContinueOutsideOfSwitchExpression(statement, statement.findContinuedStatement(), languageLevel);
   }
 
   @Nullable
@@ -827,7 +827,13 @@ public class HighlightUtil extends HighlightUtilBase {
       return HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(statement).descriptionAndTooltip(message).create();
     }
 
-    if (level.isAtLeast(LanguageLevel.JDK_12_PREVIEW)) {
+    return checkContinueOutsideOfSwitchExpression(statement, continuedStatement, level);
+  }
+
+  private static HighlightInfo checkContinueOutsideOfSwitchExpression(PsiContinueStatement statement,
+                                                                      PsiStatement continuedStatement,
+                                                                      LanguageLevel level) {
+    if (Feature.ENHANCED_SWITCH.isSufficient(level)) {
       PsiElement enclosing = PsiImplUtil.findEnclosingSwitchOrLoop(statement);
       if (enclosing instanceof PsiSwitchExpression && PsiTreeUtil.isAncestor(continuedStatement, enclosing, true)) {
         String message = JavaErrorMessages.message("continue.outside.switch.expr");
@@ -839,7 +845,7 @@ public class HighlightUtil extends HighlightUtilBase {
   }
 
   @Nullable
-  public static HighlightInfo checkIllegalModifierCombination(@NotNull PsiKeyword keyword, @NotNull PsiModifierList modifierList) {
+  static HighlightInfo checkIllegalModifierCombination(@NotNull PsiKeyword keyword, @NotNull PsiModifierList modifierList) {
     @PsiModifier.ModifierConstant String modifier = keyword.getText();
     String incompatible = getIncompatibleModifier(modifier, modifierList);
     if (incompatible != null) {
@@ -1452,6 +1458,10 @@ public class HighlightUtil extends HighlightUtilBase {
                       .create());
         }
       }
+
+      if (PsiType.VOID.equals(switchExpressionType)) {
+        infos.add(HighlightInfo.newHighlightInfo(HighlightInfoType.ERROR).range(switchExpression.getFirstChild()).descriptionAndTooltip("Target type for switch expression cannot be void").create());
+      }
     }
 
     return infos;
@@ -1992,7 +2002,7 @@ public class HighlightUtil extends HighlightUtilBase {
       Set<String> missingConstants = new HashSet<>();
       boolean exhaustive = hasDefaultCase;
       if (!exhaustive) {
-        if (selectorType instanceof PsiClassType) {
+        if (!values.isEmpty() && selectorType instanceof PsiClassType) {
           PsiClass type = ((PsiClassType)selectorType).resolve();
           if (type != null && type.isEnum()) {
             for (PsiField field : type.getFields()) {
@@ -2067,7 +2077,8 @@ public class HighlightUtil extends HighlightUtilBase {
     PsiClass containingClass = referencedField.getContainingClass();
     if (containingClass == null) return null;
     if (expression.getContainingFile() != referencedField.getContainingFile()) return null;
-    if (expression.getTextRange().getStartOffset() >= referencedField.getTextRange().getEndOffset()) return null;
+    TextRange fieldRange = referencedField.getTextRange();
+    if (fieldRange == null || expression.getTextRange().getStartOffset() >= fieldRange.getEndOffset()) return null;
     // only simple reference can be illegal
     if (!acceptQualified && expression.getQualifierExpression() != null) return null;
     PsiField initField = findEnclosingFieldInitializer(expression);
@@ -2891,8 +2902,7 @@ public class HighlightUtil extends HighlightUtilBase {
       return HighlightControlFlowUtil.checkVariableMustBeFinal((PsiVariable)resolved, ref, languageLevel);
     }
 
-    if (containingFile instanceof PsiClassOwner &&
-        resolved instanceof PsiClass &&
+    if (resolved instanceof PsiClass &&
         ((PsiClass)resolved).getContainingClass() == null &&
         PsiUtil.isFromDefaultPackage(resolved) &&
         (PsiTreeUtil.getParentOfType(ref, PsiImportStatementBase.class) != null ||
@@ -3083,9 +3093,9 @@ public class HighlightUtil extends HighlightUtilBase {
     STATIC_INTERFACE_CALLS(LanguageLevel.JDK_1_8, "feature.static.interface.calls"),
     REFS_AS_RESOURCE(LanguageLevel.JDK_1_9, "feature.try.with.resources.refs"),
     MODULES(LanguageLevel.JDK_1_9, "feature.modules"),
-    RAW_LITERALS(LanguageLevel.JDK_12_PREVIEW, "feature.raw.literals"),
     ENHANCED_SWITCH(LanguageLevel.JDK_12_PREVIEW, "feature.enhanced.switch"),
-    SWITCH_EXPRESSION(LanguageLevel.JDK_12_PREVIEW, "feature.switch.expressions");
+    SWITCH_EXPRESSION(LanguageLevel.JDK_12_PREVIEW, "feature.switch.expressions"),
+    RAW_LITERALS(LanguageLevel.JDK_X, "feature.raw.literals");
 
     private final LanguageLevel level;
     private final String key;
@@ -3093,6 +3103,14 @@ public class HighlightUtil extends HighlightUtilBase {
     Feature(LanguageLevel level, @PropertyKey(resourceBundle = JavaErrorMessages.BUNDLE) String key) {
       this.level = level;
       this.key = key;
+    }
+
+    /**
+     * @param element a valid PsiElement to check (it's better to supply PsiFile if already known; any element is accepted for convenience)
+     * @return true if this feature is available in the PsiFile the supplied element belongs to
+     */
+    public boolean isAvailable(PsiElement element) {
+      return isSufficient(PsiUtil.getLanguageLevel(element));
     }
 
     private boolean isSufficient(LanguageLevel useSiteLevel) {

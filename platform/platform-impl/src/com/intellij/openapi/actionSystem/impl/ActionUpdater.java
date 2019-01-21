@@ -1,17 +1,23 @@
 // Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.openapi.actionSystem.impl;
 
+import com.intellij.concurrency.SensitiveProgressWrapper;
+import com.intellij.ide.IdeEventQueue;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.actionSystem.ex.ActionUtil;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.progress.ProcessCanceledException;
+import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
-import com.intellij.openapi.progress.util.ProgressIndicatorBase;
+import com.intellij.openapi.progress.util.ProgressIndicatorUtils;
+import com.intellij.openapi.progress.util.ProgressWrapper;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Conditions;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.registry.Registry;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.ArrayUtil;
@@ -21,14 +27,23 @@ import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.containers.ContainerUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.concurrency.AsyncPromise;
+import org.jetbrains.concurrency.CancellablePromise;
+import org.jetbrains.concurrency.Promise;
 
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ComponentEvent;
+import java.awt.event.PaintEvent;
+import java.util.List;
 import java.util.*;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutorService;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 class ActionUpdater {
   private static final Logger LOG = Logger.getInstance("#com.intellij.openapi.actionSystem.impl.ActionUpdater");
+  private static final ExecutorService ourExecutor = AppExecutorUtil.createBoundedApplicationPoolExecutor("Action Updater", 2);
 
   private final boolean myModalContext;
   private final PresentationFactory myFactory;
@@ -38,9 +53,9 @@ class ActionUpdater {
   private final boolean myToolbarAction;
   private final boolean myTransparentOnly;
 
-  private final Map<AnAction, Presentation> myUpdatedPresentations = ContainerUtil.newIdentityTroveMap();
-  private final Map<ActionGroup, List<AnAction>> myGroupChildren = ContainerUtil.newIdentityTroveMap();
-  private final Map<ActionGroup, Boolean> myCanBePerformedCache = ContainerUtil.newIdentityTroveMap();
+  private final Map<AnAction, Presentation> myUpdatedPresentations = ContainerUtil.newConcurrentMap();
+  private final Map<ActionGroup, List<AnAction>> myGroupChildren = ContainerUtil.newConcurrentMap();
+  private final Map<ActionGroup, Boolean> myCanBePerformedCache = ContainerUtil.newConcurrentMap();
   private final UpdateStrategy myRealUpdateStrategy;
   private final UpdateStrategy myCheapStrategy;
 
@@ -59,19 +74,65 @@ class ActionUpdater {
     myRealUpdateStrategy = new UpdateStrategy(
       action -> {
         // clone the presentation to avoid partially changing the cached one if update is interrupted
-        Presentation presentation = myFactory.getPresentation(action).clone();
-        return doUpdate(myModalContext, action, createActionEvent(action, presentation)) ? presentation : null;
+        Presentation presentation = ActionUpdateEdtExecutor.computeOnEdt(() -> myFactory.getPresentation(action).clone());
+        Supplier<Boolean> doUpdate = () -> doUpdate(myModalContext, action, createActionEvent(action, presentation));
+        boolean success = callAction(action, "update", doUpdate);
+        return success ? presentation : null;
       },
-      group -> group.getChildren(createActionEvent(group, orDefault(group, myUpdatedPresentations.get(group)))),
-      group -> group.canBePerformed(myDataContext));
+      group -> callAction(group, "getChildren", () -> group.getChildren(createActionEvent(group, orDefault(group, myUpdatedPresentations.get(group))))),
+      group -> callAction(group, "canBePerformed", () -> group.canBePerformed(myDataContext)));
     myCheapStrategy = new UpdateStrategy(myFactory::getPresentation, group -> group.getChildren(null), group -> true);
+  }
+
+  private void applyPresentationChanges() {
+    for (Map.Entry<AnAction, Presentation> entry : myUpdatedPresentations.entrySet()) {
+      Presentation original = myFactory.getPresentation(entry.getKey());
+      Presentation cloned = entry.getValue();
+      original.copyFrom(cloned);
+      reflectSubsequentChangesInOriginalPresentation(original, cloned);
+    }
+  }
+
+  // some actions remember the presentation passed to "update" and modify it later, in hope that menu will change accordingly
+  private static void reflectSubsequentChangesInOriginalPresentation(Presentation original, Presentation cloned) {
+    cloned.addPropertyChangeListener(e -> {
+      if (SwingUtilities.isEventDispatchThread()) {
+        original.copyFrom(cloned);
+      }
+    });
+  }
+
+  private static <T> T callAction(AnAction action, String operation, Supplier<T> call) {
+    if (action instanceof UpdateInBackground || ApplicationManager.getApplication().isDispatchThread()) return call.get();
+
+    ProgressIndicator progress = Objects.requireNonNull(ProgressManager.getInstance().getProgressIndicator());
+
+    return ActionUpdateEdtExecutor.computeOnEdt(() -> {
+      long start = System.currentTimeMillis();
+      try {
+        return ProgressManager.getInstance().runProcess(call::get, ProgressWrapper.wrap(progress));
+      }
+      finally {
+        long elapsed = System.currentTimeMillis() - start;
+        if (elapsed > 100) {
+          LOG.warn("Slow (" + elapsed + "ms) '" + operation + "' on action " + action + " of " + action.getClass() +
+                   ". Consider speeding it up and/or implementing UpdateInBackground.");
+        }
+
+      }
+    });
   }
 
   /**
    * @return actions from the given and nested non-popup groups that are visible after updating
    */
   List<AnAction> expandActionGroup(ActionGroup group, boolean hideDisabled) {
-    return expandActionGroup(group, hideDisabled, myRealUpdateStrategy);
+    try {
+      return expandActionGroup(group, hideDisabled, myRealUpdateStrategy);
+    }
+    finally {
+      applyPresentationChanges();
+    }
   }
 
   private List<AnAction> expandActionGroup(ActionGroup group, boolean hideDisabled, UpdateStrategy strategy) {
@@ -83,25 +144,61 @@ class ActionUpdater {
    */
   @NotNull
   List<AnAction> expandActionGroupWithTimeout(ActionGroup group, boolean hideDisabled) {
-    List<AnAction> result = withTimeout(Registry.intValue("actionSystem.update.timeout.ms"),
-                                        () -> expandActionGroup(group, hideDisabled));
-    return result != null ? result : expandActionGroup(group, hideDisabled, myCheapStrategy);
-  }
-
-  @Nullable
-  private static <T> T withTimeout(int timeoutMs, Computable<T> computable) {
-    ProgressManager.checkCanceled();
-    ProgressIndicatorBase progress = new ProgressIndicatorBase();
-    ScheduledFuture<?> cancelProgress = AppExecutorUtil.getAppScheduledExecutorService().schedule(progress::cancel, timeoutMs, TimeUnit.MILLISECONDS);
+    List<AnAction> result = ProgressIndicatorUtils.withTimeout(Registry.intValue("actionSystem.update.timeout.ms"),
+                                                               () -> expandActionGroup(group, hideDisabled));
     try {
-      return ProgressManager.getInstance().runProcess(computable, progress);
-    }
-    catch (ProcessCanceledException e) {
-      return null;
+      return result != null ? result : expandActionGroup(group, hideDisabled, myCheapStrategy);
     }
     finally {
-      cancelProgress.cancel(false);
+      applyPresentationChanges();
     }
+  }
+
+  CancellablePromise<List<AnAction>> expandActionGroupAsync(ActionGroup group, boolean hideDisabled) {
+    AsyncPromise<List<AnAction>> promise = new AsyncPromise<>();
+    ProgressIndicator indicator = new EmptyProgressIndicator();
+    promise.onError(__ -> {
+      indicator.cancel();
+      ActionUpdateEdtExecutor.computeOnEdt(() -> {
+        applyPresentationChanges();
+        return null;
+      });
+    });
+
+    cancelAndRestartOnUserActivity(promise, indicator);
+
+    ourExecutor.submit(() -> {
+      while (promise.getState() == Promise.State.PENDING) {
+        try {
+          boolean success = ProgressIndicatorUtils.runInReadActionWithWriteActionPriority(() -> {
+            List<AnAction> result = expandActionGroup(group, hideDisabled, myRealUpdateStrategy);
+            ActionUpdateEdtExecutor.computeOnEdt(() -> {
+              applyPresentationChanges();
+              promise.setResult(result);
+              return null;
+            });
+          }, new SensitiveProgressWrapper(indicator));
+          if (!success) {
+            ProgressIndicatorUtils.yieldToPendingWriteActions();
+          }
+        }
+        catch (Throwable e) {
+          promise.setError(e);
+        }
+      }
+    });
+    return promise;
+  }
+
+  private static void cancelAndRestartOnUserActivity(Promise<?> promise, ProgressIndicator indicator) {
+    Disposable disposable = Disposer.newDisposable("Action Update");
+    IdeEventQueue.getInstance().addPostprocessor(e -> {
+      if (e instanceof ComponentEvent && !(e instanceof PaintEvent) && (e.getID() & AWTEvent.MOUSE_MOTION_EVENT_MASK) == 0) {
+        indicator.cancel();
+      }
+      return false;
+    }, disposable);
+    promise.onProcessed(__ -> Disposer.dispose(disposable));
   }
 
   private List<AnAction> doExpandActionGroup(ActionGroup group, boolean hideDisabled, UpdateStrategy strategy) {
@@ -112,29 +209,7 @@ class ActionUpdater {
     }
 
     List<AnAction> children = getGroupChildren(group, strategy);
-    List<List<AnAction>> expansions = ContainerUtil.map(children, child -> expandIfCheap(child, hideDisabled, strategy));
-    expandMoreExpensiveActions(children, expansions, hideDisabled, strategy);
-    return ContainerUtil.concat(expansions);
-  }
-
-  /**
-   * We try to update as many actions as possible first and cache their presentation so that even if we're interrupted by timeout,
-   * we show them all correctly
-   */
-  @Nullable
-  private List<AnAction> expandIfCheap(AnAction action, boolean hideDisabled, UpdateStrategy strategy) {
-    return strategy == myCheapStrategy ? null : withTimeout(1, () -> expandGroupChild(action, hideDisabled, strategy));
-  }
-
-  private void expandMoreExpensiveActions(List<AnAction> children,
-                                          List<List<AnAction>> expansions,
-                                          boolean hideDisabled,
-                                          UpdateStrategy strategy) {
-    for (int i = 0; i < children.size(); i++) {
-      if (expansions.get(i) == null) {
-        expansions.set(i, expandGroupChild(children.get(i), hideDisabled, strategy));
-      }
-    }
+    return ContainerUtil.concat(children, child -> expandGroupChild(child, hideDisabled, strategy));
   }
 
   private List<AnAction> getGroupChildren(ActionGroup group, UpdateStrategy strategy) {
@@ -189,7 +264,7 @@ class ActionUpdater {
   }
 
   private Presentation orDefault(AnAction action, Presentation presentation) {
-    return presentation != null ? presentation : myFactory.getPresentation(action);
+    return presentation != null ? presentation : ActionUpdateEdtExecutor.computeOnEdt(() -> myFactory.getPresentation(action));
   }
 
   private static List<AnAction> removeUnnecessarySeparators(List<AnAction> visible) {
@@ -275,14 +350,14 @@ class ActionUpdater {
 
   @Nullable
   private Presentation update(AnAction action, UpdateStrategy strategy) {
-    if (myUpdatedPresentations.containsKey(action)) {
-      return myUpdatedPresentations.get(action);
+    Presentation cached = myUpdatedPresentations.get(action);
+    if (cached != null) {
+      return cached;
     }
 
     Presentation presentation = strategy.update.fun(action);
-    myUpdatedPresentations.put(action, presentation);
     if (presentation != null) {
-      myFactory.getPresentation(action).copyFrom(presentation);
+      myUpdatedPresentations.put(action, presentation);
     }
     return presentation;
   }

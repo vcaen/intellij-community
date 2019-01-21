@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.util.ui;
 
 import com.intellij.BundleBase;
@@ -518,7 +518,7 @@ public class UIUtil {
         try {
           GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
           if (ge instanceof SunGraphicsEnvironment) {
-            Method m = ReflectionUtil.getDeclaredMethod(SunGraphicsEnvironment.class, "isUIScaleOn");
+            Method m = ReflectionUtil.getDeclaredMethod(SunGraphicsEnvironment.class, "isUIScaleEnabled");
             jreHiDPI.set(m != null && (Boolean)m.invoke(ge));
             jreHiDPI_earlierVersion = false;
           }
@@ -1259,7 +1259,7 @@ public class UIUtil {
   }
 
   public static Color getPanelBackground() {
-    return UIManager.getColor("Panel.background");
+    return JBColor.PanelBackground;
   }
 
   public static Color getEditorPaneBackground() {

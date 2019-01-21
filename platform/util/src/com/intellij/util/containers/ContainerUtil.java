@@ -582,20 +582,37 @@ public class ContainerUtil extends ContainerUtilRt {
     public int size() {
       return myStore.length;
     }
+
+    // override for more efficient arraycopy vs. iterator() creation/traversing
+    @NotNull
+    @Override
+    public <T> T[] toArray(@NotNull T[] a) {
+      int size = size();
+      //noinspection unchecked
+      T[] result = a.length >= size ? a : (T[])Array.newInstance(a.getClass().getComponentType(), size);
+      System.arraycopy(myStore, 0, result, 0, size);
+      if (result.length > size) {
+        result[size] = null;
+      }
+      return result;
+    }
   }
 
   @NotNull
   @Contract(pure=true)
   public static <K, V> Map<K, V> intersection(@NotNull Map<? extends K, ? extends V> map1, @NotNull Map<? extends K, ? extends V> map2) {
-    final Set<K> keys = new HashSet<K>();
-    keys.addAll(map1.keySet());
-    keys.addAll(map2.keySet());
-    final Map<K, V> res = new HashMap<K, V>();
-    for (K k : keys) {
-      V v1 = map1.get(k);
-      V v2 = map2.get(k);
-      if (v1 == v2 || v1 != null && v1.equals(v2)) {
-        res.put(k, v1);
+    if (map2.size() < map1.size()) {
+      Map<? extends K, ? extends V> t = map1;
+      map1 = map2;
+      map2 = t;
+    }
+    final Map<K, V> res = new HashMap<K, V>(map1);
+    for (Map.Entry<? extends K, ? extends V> entry : map2.entrySet()) {
+      K key = entry.getKey();
+      V v2 = entry.getValue();
+      V v1 = map1.get(key);
+      if (!(v1 == v2 || v1 != null && v1.equals(v2))) {
+        res.remove(key);
       }
     }
     return res;
@@ -604,10 +621,8 @@ public class ContainerUtil extends ContainerUtilRt {
   @NotNull
   @Contract(pure=true)
   public static <K, V> Map<K,Couple<V>> diff(@NotNull Map<? extends K, ? extends V> map1, @NotNull Map<? extends K, ? extends V> map2) {
-    final Set<K> keys = new HashSet<K>();
-    keys.addAll(map1.keySet());
-    keys.addAll(map2.keySet());
-    final Map<K, Couple<V>> res = new HashMap<K, Couple<V>>();
+    Set<K> keys = union(map1.keySet(), map2.keySet());
+    Map<K, Couple<V>> res = new HashMap<K, Couple<V>>();
     for (K k : keys) {
       V v1 = map1.get(k);
       V v2 = map2.get(k);
@@ -1349,7 +1364,11 @@ public class ContainerUtil extends ContainerUtilRt {
   @NotNull
   @Contract(pure=true)
   public static <T> List<T> concat(@NotNull Iterable<? extends Collection<? extends T>> list) {
-    List<T> result = new ArrayList<T>();
+    int totalSize = 0;
+    for (final Collection<? extends T> ts : list) {
+      totalSize += ts.size();
+    }
+    List<T> result = new ArrayList<T>(totalSize);
     for (final Collection<? extends T> ts : list) {
       result.addAll(ts);
     }
@@ -1896,7 +1915,7 @@ public class ContainerUtil extends ContainerUtilRt {
   @NotNull
   @Contract(pure=true)
   public static <T,V> List<V> map(@NotNull Iterable<? extends T> iterable, @NotNull Function<? super T, ? extends V> mapping) {
-    List<V> result = new ArrayList<V>();
+    List<V> result = new ArrayList<V>(iterable instanceof Collection ? ((Collection)iterable).size() : 10);
     for (T t : iterable) {
       result.add(mapping.fun(t));
     }
@@ -2312,7 +2331,11 @@ public class ContainerUtil extends ContainerUtilRt {
   @NotNull
   @Contract(pure=true)
   public static <E> List<E> flatten(@NotNull Iterable<? extends Collection<? extends E>> collections) {
-    List<E> result = new ArrayList<E>();
+    int totalSize = 0;
+    for (Collection<? extends E> list : collections) {
+      totalSize += list.size();
+    }
+    List<E> result = new ArrayList<E>(totalSize);
     for (Collection<? extends E> list : collections) {
       result.addAll(list);
     }
@@ -2326,7 +2349,11 @@ public class ContainerUtil extends ContainerUtilRt {
   @NotNull
   @Contract(pure=true)
   public static <E> List<E> flattenIterables(@NotNull Iterable<? extends Iterable<E>> collections) {
-    List<E> result = new ArrayList<E>();
+    int totalSize = 0;
+    for (Iterable<E> list : collections) {
+      totalSize += list instanceof Collection ? ((Collection)list).size() : 10;
+    }
+    List<E> result = new ArrayList<E>(totalSize);
     for (Iterable<E> list : collections) {
       for (E e : list) {
         result.add(e);

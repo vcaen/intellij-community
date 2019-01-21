@@ -67,6 +67,7 @@ import gnu.trove.THashSet;
 import one.util.streamex.StreamEx;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.TestOnly;
 
 import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
@@ -80,11 +81,12 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.Predicate;
 
-public class GlobalInspectionContextImpl extends GlobalInspectionContextBase implements GlobalInspectionContext {
+public class GlobalInspectionContextImpl extends GlobalInspectionContextBase {
   private static final int MAX_OPEN_GLOBAL_INSPECTION_XML_RESULT_FILES = SystemProperties.getIntProperty("max.open.global.inspection.xml.files", 50);
   private static final Logger LOG = Logger.getInstance(GlobalInspectionContextImpl.class);
   @SuppressWarnings("StaticNonFinalField")
-  public static volatile boolean CREATE_VIEW_FORCE;
+  @TestOnly
+  public static volatile boolean TESTING_VIEW;
   public static final NotificationGroup NOTIFICATION_GROUP = NotificationGroup.toolWindowGroup("Inspection Results", ToolWindowId.INSPECTION);
 
   private final NotNullLazyValue<? extends ContentManager> myContentManager;
@@ -94,12 +96,8 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
   private volatile boolean myViewClosed = true;
   private long myInspectionStartedTimestamp;
 
-  @NotNull
-  private AnalysisUIOptions myUIOptions;
-
   public GlobalInspectionContextImpl(@NotNull Project project, @NotNull NotNullLazyValue<? extends ContentManager> contentManager) {
     super(project);
-    myUIOptions = AnalysisUIOptions.getInstance(project).copy();
     myContentManager = contentManager;
   }
 
@@ -343,23 +341,20 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
 
   @NotNull
   public AnalysisUIOptions getUIOptions() {
-    return myUIOptions;
+    return AnalysisUIOptions.getInstance(getProject());
   }
 
   public void setSplitterProportion(final float proportion) {
-    myUIOptions.SPLITTER_PROPORTION = proportion;
+    getUIOptions().SPLITTER_PROPORTION = proportion;
   }
 
   @NotNull
   public ToggleAction createToggleAutoscrollAction() {
-    return myUIOptions.getAutoScrollToSourceHandler().createToggleAction();
+    return getUIOptions().getAutoScrollToSourceHandler().createToggleAction();
   }
 
   @Override
   protected void launchInspections(@NotNull final AnalysisScope scope) {
-    if (!ApplicationManager.getApplication().isUnitTestMode()) {
-      myUIOptions = AnalysisUIOptions.getInstance(getProject()).copy();
-    }
     myViewClosed = false;
     super.launchInspections(scope);
   }
@@ -372,7 +367,8 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
 
   @Override
   protected void notifyInspectionsFinished(@NotNull final AnalysisScope scope) {
-    if (ApplicationManager.getApplication().isUnitTestMode() && !CREATE_VIEW_FORCE) return;
+    //noinspection TestOnlyProblems
+    if (ApplicationManager.getApplication().isUnitTestMode() && !TESTING_VIEW) return;
     LOG.assertTrue(ApplicationManager.getApplication().isDispatchThread());
     long elapsed = System.currentTimeMillis() - myInspectionStartedTimestamp;
     LOG.info("Code inspection finished. Took " + elapsed + "ms");
@@ -563,7 +559,6 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
 
     VirtualFile virtualFile = file.getVirtualFile();
     String url = ProjectUtilCore.displayUrlRelativeToProject(virtualFile, virtualFile.getPresentableUrl(), getProject(), true, false);
-    incrementJobDoneAmount(getStdJobDescriptors().LOCAL_ANALYSIS, url);
 
     final LocalInspectionsPass pass = new LocalInspectionsPass(file, document, range.getStartOffset(),
                                                                range.getEndOffset(), LocalInspectionsPass.EMPTY_PRIORITY_RANGE, true,
@@ -587,6 +582,7 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
         BatchModeDescriptorsUtil.addProblemDescriptors(holder.getResults(), false, this, null, CONVERT, toolPresentation);
         return true;
       });
+      incrementJobDoneAmount(getStdJobDescriptors().LOCAL_ANALYSIS, url);
     }
     catch (ProcessCanceledException e) {
       final Throwable cause = e.getCause();
@@ -878,7 +874,6 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
         return;
       }
     }
-    AnalysisUIOptions.getInstance(getProject()).save(myUIOptions);
     if (myContent != null) {
       final ContentManager contentManager = getContentManager();
       contentManager.removeContent(myContent, true);
@@ -1082,7 +1077,8 @@ public class GlobalInspectionContextImpl extends GlobalInspectionContextBase imp
   }
 
   private void addProblemsToView(List<Tools> tools) {
-    if (ApplicationManager.getApplication().isHeadlessEnvironment() && !CREATE_VIEW_FORCE) {
+    //noinspection TestOnlyProblems
+    if (ApplicationManager.getApplication().isHeadlessEnvironment() && !TESTING_VIEW) {
       return;
     }
     if (myView == null && !ReadAction.compute(() -> InspectionResultsView.hasProblems(tools, this, new InspectionRVContentProviderImpl())).booleanValue()) {

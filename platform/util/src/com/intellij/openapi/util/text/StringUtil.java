@@ -8,10 +8,7 @@ import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.TextRange;
 import com.intellij.util.*;
 import com.intellij.util.containers.ContainerUtil;
-import com.intellij.util.text.CharArrayUtil;
-import com.intellij.util.text.CharSequenceSubSequence;
-import com.intellij.util.text.MergingCharSequence;
-import com.intellij.util.text.StringFactory;
+import com.intellij.util.text.*;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -25,6 +22,7 @@ import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
 import java.util.*;
+import java.util.StringTokenizer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -1634,23 +1632,11 @@ public class StringUtil extends StringUtilRt {
     return sb.toString();
   }
 
-  public static String formatOrdinal(int i) {
-    int mod = i % 100;
-    if (mod == 11 || mod == 12 || mod == 13) {
-      return i + "th";
-    }
-
-    mod = mod % 10;
-    if (mod == 1) {
-      return i + "st";
-    }
-    else if (mod == 2) {
-      return i + "nd";
-    }
-    else if (mod == 3) {
-      return i + "rd";
-    }
-    return i + "th";
+  /**
+   * Appends English ordinal suffix to the given number.
+   */
+  public static String formatOrdinal(long num) {
+    return OrdinalFormat.formatEnglish(num);
   }
 
   /**
@@ -2812,6 +2798,19 @@ public class StringUtil extends StringUtilRt {
     return c >= '0' && c <= '9';
   }
 
+  @Contract("null -> false")
+  public static boolean isNotNegativeNumber(@Nullable CharSequence s) {
+    if (s == null) {
+      return false;
+    }
+    for (int i = 0; i < s.length(); i++) {
+      if (!isDecimalDigit(s.charAt(i))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   @Contract(pure = true)
   public static int compare(@Nullable String s1, @Nullable String s2, boolean ignoreCase) {
     //noinspection StringEquality
@@ -2954,6 +2953,27 @@ public class StringUtil extends StringUtilRt {
     CharSequence ts2 = new CharSequenceSubSequence(s2, start2, end2);
 
     return equals(ts1, ts2);
+  }
+
+  /**
+   * Collapses all white-space (including new lines) between non-white-space characters to a single space character.
+   * Leading and trailing white space is removed.
+   */
+  public static String collapseWhiteSpace(@NotNull CharSequence s) {
+    final StringBuilder result = new StringBuilder();
+    boolean space = false;
+    for (int i = 0, length = s.length(); i < length; i++) {
+      final char ch = s.charAt(i);
+      if (isWhiteSpace(ch)) {
+        if (!space) space = true;
+      }
+      else {
+        if (space && result.length() > 0) result.append(' ');
+        result.append(ch);
+        space = false;
+      }
+    }
+    return result.toString();
   }
 
   @Contract(pure = true)

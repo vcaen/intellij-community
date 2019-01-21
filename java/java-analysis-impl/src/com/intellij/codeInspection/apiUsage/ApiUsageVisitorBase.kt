@@ -3,9 +3,8 @@ package com.intellij.codeInspection.apiUsage
 
 import com.intellij.codeInsight.daemon.impl.analysis.JavaHighlightUtil
 import com.intellij.psi.*
+import com.intellij.psi.impl.source.tree.LeafPsiElement
 import com.intellij.psi.infos.MethodCandidateInfo
-import org.jetbrains.uast.UImportStatement
-import org.jetbrains.uast.getUastParentOfType
 
 /**
  * Non-recursive PSI visitor that detects usages of APIs and reports them via [ApiUsageDetector] interface.
@@ -16,7 +15,7 @@ abstract class ApiUsageVisitorBase : PsiElementVisitor(), ApiUsageDetector {
 
   final override fun visitElement(element: PsiElement) {
     super.visitElement(element)
-    if (element is PsiLanguageInjectionHost) {
+    if (element is PsiLanguageInjectionHost || element is LeafPsiElement) {
       //Better performance.
       return
     }
@@ -30,9 +29,10 @@ abstract class ApiUsageVisitorBase : PsiElementVisitor(), ApiUsageDetector {
   }
 
   private fun processReferences(element: PsiElement) {
-    val insideImport = element.isInsideImport()
-    for (reference in element.references) {
-      processReference(reference, insideImport)
+    if (shouldProcessReferences(element)) {
+      for (reference in element.references) {
+        processReference(reference)
+      }
     }
   }
 
@@ -97,8 +97,5 @@ abstract class ApiUsageVisitorBase : PsiElementVisitor(), ApiUsageDetector {
       processMethodOverriding(method, superMethod)
     }
   }
-
-  private fun PsiElement.isInsideImport(): Boolean =
-    getUastParentOfType(UImportStatement::class.java) != null
 
 }

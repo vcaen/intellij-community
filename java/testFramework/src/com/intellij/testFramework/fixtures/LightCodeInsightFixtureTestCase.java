@@ -1,4 +1,4 @@
-// Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
+// Copyright 2000-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package com.intellij.testFramework.fixtures;
 
 import com.intellij.lang.Language;
@@ -49,6 +49,7 @@ public abstract class LightCodeInsightFixtureTestCase extends UsefulTestCase {
   }
 
   @NotNull public static final LightProjectDescriptor JAVA_1_4 = new ProjectDescriptor(LanguageLevel.JDK_1_4);
+  @NotNull public static final LightProjectDescriptor JAVA_1_4_ANNOTATED = new ProjectDescriptor(LanguageLevel.JDK_1_4, true);
   @NotNull public static final LightProjectDescriptor JAVA_1_5 = new ProjectDescriptor(LanguageLevel.JDK_1_5);
   @NotNull public static final LightProjectDescriptor JAVA_1_6 = new ProjectDescriptor(LanguageLevel.JDK_1_6);
   @NotNull public static final LightProjectDescriptor JAVA_1_7 = new ProjectDescriptor(LanguageLevel.JDK_1_7);
@@ -92,7 +93,10 @@ public abstract class LightCodeInsightFixtureTestCase extends UsefulTestCase {
 
   @NotNull
   protected TempDirTestFixture getTempDirFixture() {
-    return new LightTempDirTestFixtureImpl(true);
+    IdeaTestExecutionPolicy policy = IdeaTestExecutionPolicy.current();
+    return policy != null
+           ? policy.createTempDirTestFixture()
+           : new LightTempDirTestFixtureImpl(true);
   }
 
   @Override

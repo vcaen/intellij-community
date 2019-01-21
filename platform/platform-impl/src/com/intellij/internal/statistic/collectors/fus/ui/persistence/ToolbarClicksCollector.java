@@ -2,12 +2,13 @@
 package com.intellij.internal.statistic.collectors.fus.ui.persistence;
 
 import com.intellij.internal.statistic.beans.ConvertUsagesUtil;
-import com.intellij.internal.statistic.collectors.fus.ui.ToolbarClicksUsagesCollector;
+import com.intellij.internal.statistic.eventLog.FeatureUsageDataBuilder;
+import com.intellij.internal.statistic.eventLog.FeatureUsageGroup;
 import com.intellij.internal.statistic.eventLog.FeatureUsageLogger;
 import com.intellij.internal.statistic.persistence.UsageStatisticsPersistenceComponent;
 import com.intellij.internal.statistic.service.fus.collectors.FUSUsageContext;
-import com.intellij.internal.statistic.utils.PluginType;
-import com.intellij.internal.statistic.utils.StatisticsUtilKt;
+import com.intellij.internal.statistic.utils.PluginInfo;
+import com.intellij.internal.statistic.utils.PluginInfoDetectorKt;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.ActionWithDelegate;
 import com.intellij.openapi.actionSystem.AnAction;
@@ -25,11 +26,14 @@ import java.util.Map;
 @State(
   name = "ToolbarClicksCollector",
   storages = {
-    @Storage(value = UsageStatisticsPersistenceComponent.USAGE_STATISTICS_XML, roamingType = RoamingType.DISABLED),
+    @Storage(value = UsageStatisticsPersistenceComponent.USAGE_STATISTICS_XML, roamingType = RoamingType.DISABLED, deprecated = true),
     @Storage(value = "statistics.toolbar.clicks.xml", roamingType = RoamingType.DISABLED, deprecated = true)
   }
 )
 public class ToolbarClicksCollector implements PersistentStateComponent<ToolbarClicksCollector.ClicksState> {
+  private static final FeatureUsageGroup GROUP = new FeatureUsageGroup("toolbar", 1);
+  private static final String DEFAULT_ID = "third.party.action";
+
   public final static class ClicksState {
     @Tag("counts")
     @MapAnnotation(surroundWithTag = false, keyAttributeName = "action", valueAttributeName = "count")
@@ -45,20 +49,22 @@ public class ToolbarClicksCollector implements PersistentStateComponent<ToolbarC
 
   @Override
   public void loadState(@NotNull final ClicksState state) {
-    myState = state;
   }
 
   public static void record(@NotNull AnAction action, String place) {
-    record(toRecordedId(action), place);
+    final PluginInfo info = PluginInfoDetectorKt.getPluginInfo(action.getClass());
+
+    final boolean isDevelopedByJB = info.isDevelopedByJetBrains();
+    final String key = isDevelopedByJB ? toReportedId(action) : DEFAULT_ID;
+
+    final FeatureUsageDataBuilder builder = new FeatureUsageDataBuilder().addPluginInfo(info);
+    if (isDevelopedByJB) {
+      builder.addPlace(place);
+    }
+    record(key, builder);
   }
 
-  @NotNull
-  private static String toRecordedId(@NotNull AnAction action) {
-    final PluginType type = StatisticsUtilKt.getPluginType(action.getClass());
-    if (!type.isDevelopedByJetBrains()) {
-      return type.name();
-    }
-
+  private static String toReportedId(@NotNull AnAction action) {
     String id = ActionManager.getInstance().getId(action);
     if (id == null) {
       if (action instanceof ActionWithDelegate) {
@@ -70,18 +76,15 @@ public class ToolbarClicksCollector implements PersistentStateComponent<ToolbarC
     return id;
   }
 
-  public static void record(String actionId, String place) {
+  public static void record(String actionId) {
+    record(actionId, new FeatureUsageDataBuilder());
+  }
+
+  private static void record(@NotNull String actionId, @NotNull FeatureUsageDataBuilder builder) {
     ToolbarClicksCollector collector = getInstance();
     if (collector != null) {
-      String key = ConvertUsagesUtil.escapeDescriptorName(actionId + "@" + place);
-      FeatureUsageLogger.INSTANCE.log(ToolbarClicksUsagesCollector.GROUP_ID, key, FUSUsageContext.OS_CONTEXT.getData());
-
-      ClicksState state = collector.getState();
-      if (state != null) {
-        final Integer count = state.myValues.get(key);
-        int value = count == null ? 1 : count + 1;
-        state.myValues.put(key, value);
-      }
+      final Map<String, Object> data = builder.addFeatureContext(FUSUsageContext.OS_CONTEXT).createData();
+      FeatureUsageLogger.INSTANCE.log(GROUP, ConvertUsagesUtil.escapeDescriptorName(actionId), data);
     }
   }
 

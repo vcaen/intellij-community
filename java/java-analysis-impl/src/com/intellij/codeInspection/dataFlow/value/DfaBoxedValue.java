@@ -16,7 +16,6 @@
 package com.intellij.codeInspection.dataFlow.value;
 
 import com.intellij.codeInspection.dataFlow.*;
-import com.intellij.psi.PsiPrimitiveType;
 import com.intellij.psi.PsiType;
 import gnu.trove.TIntObjectHashMap;
 import org.jetbrains.annotations.NonNls;
@@ -64,15 +63,14 @@ public class DfaBoxedValue extends DfaValue {
 
     @Nullable
     public DfaValue createBoxed(DfaValue valueToWrap, @Nullable PsiType type) {
-      if (valueToWrap instanceof DfaVariableValue && ((DfaVariableValue)valueToWrap).getSource() == SpecialField.UNBOX) {
+      if (valueToWrap instanceof DfaVariableValue && ((DfaVariableValue)valueToWrap).getDescriptor() == SpecialField.UNBOX) {
         return ((DfaVariableValue)valueToWrap).getQualifier();
       }
-      if (valueToWrap instanceof DfaConstValue) {
-        DfaConstValue constValue = (DfaConstValue)valueToWrap;
+      if (valueToWrap instanceof DfaConstValue || valueToWrap instanceof DfaFactMapValue) {
         DfaFactMap facts = DfaFactMap.EMPTY
           .with(DfaFactType.TYPE_CONSTRAINT, type == null ? null : TypeConstraint.exact(myFactory.createDfaType(type)))
           .with(DfaFactType.NULLABILITY, DfaNullability.NOT_NULL)
-          .with(DfaFactType.SPECIAL_FIELD_VALUE, SpecialField.UNBOX.withValue(constValue.getValue(), constValue.getType()));
+          .with(DfaFactType.SPECIAL_FIELD_VALUE, SpecialField.UNBOX.withValue(valueToWrap));
         return myFactory.getFactFactory().createValue(facts);
       }
       if (valueToWrap instanceof DfaVariableValue) {
@@ -85,14 +83,5 @@ public class DfaBoxedValue extends DfaValue {
       }
       return null;
     }
-
-    @NotNull
-    public DfaValue createUnboxed(DfaValue value, PsiPrimitiveType targetType) {
-      if (value instanceof DfaBoxedValue) {
-        return ((DfaBoxedValue)value).getWrappedValue();
-      }
-      return SpecialField.UNBOX.createValue(myFactory, value, targetType);
-    }
-
   }
 }

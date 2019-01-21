@@ -29,18 +29,16 @@ public abstract class SuppressableInspectionTreeNode extends InspectionTreeNode 
   private volatile Boolean myValid;
   private volatile NodeState myPreviousState;
 
-  SuppressableInspectionTreeNode(@NotNull InspectionToolPresentation presentation, @NotNull InspectionTreeModel model) {
-    super(model);
+  SuppressableInspectionTreeNode(@NotNull InspectionToolPresentation presentation, @NotNull InspectionTreeNode parent) {
+    super(parent);
     myPresentation = presentation;
   }
 
   void nodeAdded() {
     dropProblemCountCaches();
-    ReadAction.run(() -> {
-      myPresentableName = calculatePresentableName();
-      myValid = calculateIsValid();
-      myAvailableSuppressActions = calculateAvailableSuppressActions();
-    });
+    ReadAction.run(() -> myValid = calculateIsValid());
+    //force calculation
+    getProblemLevels();
   }
 
   @Override
@@ -106,6 +104,18 @@ public abstract class SuppressableInspectionTreeNode extends InspectionTreeNode 
       myPresentableName = name;
     }
     return name;
+  }
+
+  @Override
+  void uiRequested() {
+    nodeAdded();
+    ReadAction.run(() -> {
+      if (myPresentableName == null) {
+        myPresentableName = calculatePresentableName();
+        myValid = calculateIsValid();
+        myAvailableSuppressActions = calculateAvailableSuppressActions();
+      }
+    });
   }
 
   @Nullable
@@ -208,6 +218,9 @@ public abstract class SuppressableInspectionTreeNode extends InspectionTreeNode 
   }
 
   private NodeState calculateState() {
-    return NodeState.INTERNER.intern(new NodeState(isValid(), isAlreadySuppressedFromView(), isQuickFixAppliedFromView(), isExcluded()));
+    NodeState state = new NodeState(isValid(), isAlreadySuppressedFromView(), isQuickFixAppliedFromView(), isExcluded());
+    synchronized (NodeState.INTERNER) {
+      return NodeState.INTERNER.intern(state);
+    }
   }
 }

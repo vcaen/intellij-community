@@ -51,6 +51,7 @@ import com.intellij.ui.ScrollPaneFactory;
 import com.intellij.ui.SideBorder;
 import com.intellij.util.Alarm;
 import com.intellij.util.ObjectUtils;
+import com.intellij.util.concurrency.Invoker;
 import com.intellij.util.concurrency.SequentialTaskExecutor;
 import com.intellij.util.ui.EdtInvocationManager;
 import com.intellij.util.ui.JBUI;
@@ -67,6 +68,7 @@ import java.awt.event.InputEvent;
 import java.awt.event.MouseEvent;
 import java.util.List;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 
 public class InspectionResultsView extends JPanel implements Disposable, DataProvider, OccurenceNavigator {
@@ -100,7 +102,7 @@ public class InspectionResultsView extends JPanel implements Disposable, DataPro
   private final Alarm myLoadingProgressPreviewAlarm = new Alarm(this);
   private final InspectionViewSuppressActionHolder mySuppressActionHolder = new InspectionViewSuppressActionHolder();
 
-  private final ExecutorService myTreeUpdater = SequentialTaskExecutor.createSequentialApplicationPoolExecutor("Inspection-View-Tree-Updater");
+  private final Invoker myTreeUpdater;
   private volatile boolean myUpdating;
 
   public InspectionResultsView(@NotNull GlobalInspectionContextImpl globalInspectionContext,
@@ -111,6 +113,7 @@ public class InspectionResultsView extends JPanel implements Disposable, DataPro
     myGlobalInspectionContext = globalInspectionContext;
     myProvider = provider;
     myTree = new InspectionTree(globalInspectionContext, this);
+    myTreeUpdater = myTree.getInspectionTreeModel().getInvoker();
 
     mySplitter = new OnePixelSplitter(false, AnalysisUIOptions.getInstance(globalInspectionContext.getProject()).SPLITTER_PROPORTION);
     mySplitter.setFirstComponent(ScrollPaneFactory.createScrollPane(myTree, SideBorder.LEFT));
@@ -318,7 +321,8 @@ public class InspectionResultsView extends JPanel implements Disposable, DataPro
             }
             else if (node instanceof InspectionPackageNode ||
                      node instanceof InspectionModuleNode ||
-                     node instanceof RefElementNode) {
+                     node instanceof RefElementNode ||
+                     (isSingleInspectionRun() && node instanceof InspectionSeverityGroupNode)) {
               showInRightPanel(node.getContainingFileLocalEntity());
             }
             else if (node instanceof InspectionNode) {
@@ -780,7 +784,6 @@ public class InspectionResultsView extends JPanel implements Disposable, DataPro
   public void rerun() {
     myRerun = true;
     if (myScope.isValid()) {
-      AnalysisUIOptions.getInstance(getProject()).save(myGlobalInspectionContext.getUIOptions());
       myGlobalInspectionContext.doInspections(myScope);
     } else {
       GlobalInspectionContextImpl.NOTIFICATION_GROUP.createNotification(InspectionsBundle.message("inspection.view.invalid.scope.message"), NotificationType.INFORMATION).notify(getProject());
@@ -788,12 +791,12 @@ public class InspectionResultsView extends JPanel implements Disposable, DataPro
   }
 
   private void updateTree(@NotNull Runnable action) {
-    myTreeUpdater.execute(() -> ProgressManager.getInstance().runProcess(action, new EmptyProgressIndicator()));
+    myTreeUpdater.runOrInvokeLater(() -> ProgressManager.getInstance().runProcess(action, new EmptyProgressIndicator()));
   }
 
 
   @TestOnly
-  public void dispatchTreeUpdate() throws Exception {
-    myTreeUpdater.submit(EmptyRunnable.getInstance()).get();
+  public void dispatchTreeUpdate() throws ExecutionException, InterruptedException {
+    myTreeUpdater.runOrInvokeLater(EmptyRunnable.getInstance()).get();
   }
 }

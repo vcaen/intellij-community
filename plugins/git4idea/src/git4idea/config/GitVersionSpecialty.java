@@ -215,7 +215,7 @@ public enum GitVersionSpecialty {
   SUPPORTS_FORCE_PUSH_WITH_LEASE {
     @Override
     public boolean existsIn(@NotNull GitVersion version) {
-      return version.isLaterOrEqual(new GitVersion(1, 8, 5, 0));
+      return version.isLaterOrEqual(new GitVersion(2, 9, 4, 0));
     }
   },
 
@@ -238,6 +238,13 @@ public enum GitVersionSpecialty {
     @Override
     public boolean existsIn(@NotNull GitVersion version) {
       return version.isLaterOrEqual(new GitVersion(2, 1, 0, 0));
+    }
+  },
+
+  ENV_GIT_OPTIONAL_LOCKS_ALLOWED {
+    @Override
+    public boolean existsIn(@NotNull GitVersion version) {
+      return version.isLaterOrEqual(new GitVersion(2, 15, 0, 0));
     }
   },
 

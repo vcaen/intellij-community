@@ -2,6 +2,7 @@
 package com.intellij.testFramework;
 
 import com.intellij.diagnostic.PerformanceWatcher;
+import com.intellij.diagnostic.ThreadDumper;
 import com.intellij.execution.process.ProcessIOExecutorService;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.Application;
@@ -62,6 +63,7 @@ public class ThreadTracker {
     return ContainerUtil.newMapFromValues(ContainerUtil.iterate(threads), Thread::getName);
   }
 
+  // contains prefixes of the thread names which are known to be long-running (and thus exempted from the leaking threads detection)
   private static final Set<String> wellKnownOffenders = new THashSet<>();
   static {
     List<String> offenders = Arrays.asList(
@@ -97,7 +99,7 @@ public class ThreadTracker {
     List<String> sorted = offenders.stream().sorted(String::compareToIgnoreCase).collect(Collectors.toList());
     if (!offenders.equals(sorted)) {
       String proper = StringUtil.join(ContainerUtil.map(sorted, s -> '"' + s + '"'), ",\n").replaceAll('"'+FlushingDaemon.NAME+'"', "FlushingDaemon.NAME");
-      throw new AssertionError("The thread names must be sorted. Something like this will do:\n" + proper);
+      throw new AssertionError("Thread names must be sorted (for ease of maintainance). Something like this will do:\n" + proper);
     }
     wellKnownOffenders.addAll(offenders);
     Application application = ApplicationManager.getApplication();
@@ -119,8 +121,7 @@ public class ThreadTracker {
   }
 
   // marks Thread with this name as long-running, which should be ignored from the thread-leaking checks
-  public static void longRunningThreadCreated(@NotNull Disposable parentDisposable,
-                                              @NotNull final String... threadNamePrefixes) {
+  public static void longRunningThreadCreated(@NotNull Disposable parentDisposable, @NotNull final String... threadNamePrefixes) {
     wellKnownOffenders.addAll(Arrays.asList(threadNamePrefixes));
     Disposer.register(parentDisposable, () -> wellKnownOffenders.removeAll(Arrays.asList(threadNamePrefixes)));
   }
@@ -147,13 +148,13 @@ public class ThreadTracker {
 
         if (stackTrace.length == 0
             // give thread a chance to run up to the completion
-            || thread.getState() == Thread.State.RUNNABLE) {
+            || thread.getState() == Thread.State.RUNNABLE || thread.getState() == Thread.State.BLOCKED) {
           thread.interrupt();
           long start = System.currentTimeMillis();
           //if (thread.isAlive()) {
           //  System.err.println("waiting for " + thread + "\n" + ThreadDumper.dumpThreadsToString());
           //}
-          while (System.currentTimeMillis() < start + 5_000) {
+          while (System.currentTimeMillis() < start + 10_000) {
             UIUtil.dispatchAllInvocationEvents(); // give blocked thread opportunity to die if it's stuck doing invokeAndWait()
             // afters some time the submitted task can finish and the thread become idle pool
             if (shouldIgnore(thread, thread.getStackTrace())) break;
@@ -169,7 +170,7 @@ public class ThreadTracker {
         if (shouldIgnore(thread, stackTrace)) continue;
 
         String trace = PerformanceWatcher.printStacktrace("Thread leaked", thread, stackTrace);
-        Assert.fail(trace);
+        Assert.fail(trace + "\n\nFull thread dump:\n"+ThreadDumper.dumpThreadsToString());
       }
     }
     finally {
@@ -185,7 +186,8 @@ public class ThreadTracker {
       return true; // ignore threads with empty stack traces for now. Seems they are zombies unwilling to die.
     }
     if (isIdleApplicationPoolThread(stackTrace)) return true;
-    return isIdleCommonPoolThread(thread, stackTrace);
+    return isIdleCommonPoolThread(thread, stackTrace) ||
+           isCoroutineSchedulerPoolThread(thread, stackTrace);
   }
 
   private static boolean isWellKnownOffender(@NotNull String threadName) {
@@ -194,6 +196,7 @@ public class ThreadTracker {
 
   // true if somebody started new thread via "executeInPooledThread()" and then the thread is waiting for next task
   private static boolean isIdleApplicationPoolThread(@NotNull StackTraceElement[] stackTrace) {
+    //noinspection UnnecessaryLocalVariable
     boolean insideTPEGetTask = Arrays.stream(stackTrace)
       .anyMatch(element -> element.getMethodName().equals("getTask")
                            && element.getClassName().equals("java.util.concurrent.ThreadPoolExecutor"));
@@ -205,10 +208,22 @@ public class ThreadTracker {
     if (!ForkJoinWorkerThread.class.isAssignableFrom(thread.getClass())) {
       return false;
     }
+    //noinspection UnnecessaryLocalVariable
     boolean insideAwaitWork = Arrays.stream(stackTrace)
       .anyMatch(element -> element.getMethodName().equals("awaitWork")
                            && element.getClassName().equals("java.util.concurrent.ForkJoinPool"));
     return insideAwaitWork;
+  }
+
+  private static boolean isCoroutineSchedulerPoolThread(@NotNull Thread thread, @NotNull StackTraceElement[] stackTrace) {
+    if (!"kotlinx.coroutines.scheduling.CoroutineScheduler$Worker".equals(thread.getClass().getName())) {
+      return false;
+    }
+    //noinspection UnnecessaryLocalVariable
+    boolean insideCpuWorkerIdle = Arrays.stream(stackTrace)
+      .anyMatch(element -> element.getMethodName().equals("cpuWorkerIdle")
+                           && element.getClassName().equals("kotlinx.coroutines.scheduling.CoroutineScheduler$Worker"));
+    return insideCpuWorkerIdle;
   }
 
   public static void awaitJDIThreadsTermination(int timeout, @NotNull TimeUnit unit) {

@@ -10,25 +10,32 @@ import com.intellij.ui.components.JBLoadingPanel
 import com.intellij.util.ui.UIUtil
 import com.intellij.vcs.log.ui.frame.ProgressStripe
 import org.jetbrains.plugins.github.api.data.GithubAuthenticatedUser
+import org.jetbrains.plugins.github.api.data.GithubIssueState
 import org.jetbrains.plugins.github.api.data.GithubPullRequestDetailedWithHtml
 import org.jetbrains.plugins.github.api.data.GithubRepoDetailed
 import org.jetbrains.plugins.github.pullrequest.avatars.CachingGithubAvatarIconsProvider
 import org.jetbrains.plugins.github.pullrequest.data.GithubPullRequestsDataLoader
 import org.jetbrains.plugins.github.pullrequest.data.service.GithubPullRequestsStateService
 import org.jetbrains.plugins.github.pullrequest.ui.GithubDataLoadingComponent
+import org.jetbrains.plugins.github.util.GithubSharedProjectSettings
 import java.awt.BorderLayout
 
-internal class GithubPullRequestDetailsComponent(private val dataLoader: GithubPullRequestsDataLoader,
+internal class GithubPullRequestDetailsComponent(sharedProjectSettings: GithubSharedProjectSettings,
+                                                 private val dataLoader: GithubPullRequestsDataLoader,
                                                  stateService: GithubPullRequestsStateService,
                                                  iconProviderFactory: CachingGithubAvatarIconsProvider.Factory,
                                                  accountDetails: GithubAuthenticatedUser,
                                                  repoDetails: GithubRepoDetailed)
   : GithubDataLoadingComponent<GithubPullRequestDetailedWithHtml>(), Disposable {
-  private val detailsPanel = GithubPullRequestDetailsPanel(stateService, iconProviderFactory, accountDetails, repoDetails)
+  private val detailsPanel = GithubPullRequestDetailsPanel(sharedProjectSettings, stateService, iconProviderFactory,
+                                                           accountDetails, repoDetails)
   private val loadingPanel = JBLoadingPanel(BorderLayout(), this, ProgressWindow.DEFAULT_PROGRESS_DIALOG_POSTPONE_TIME_MILLIS).apply {
     isOpaque = false
   }
-  private val backgroundLoadingPanel = ProgressStripe(loadingPanel, this, ProgressWindow.DEFAULT_PROGRESS_DIALOG_POSTPONE_TIME_MILLIS)
+  private val backgroundLoadingPanel = ProgressStripe(loadingPanel, this,
+                                                      ProgressWindow.DEFAULT_PROGRESS_DIALOG_POSTPONE_TIME_MILLIS).apply {
+    isOpaque = false
+  }
 
   init {
     isOpaque = true
@@ -46,7 +53,7 @@ internal class GithubPullRequestDetailsComponent(private val dataLoader: GithubP
 
   override fun handleResult(result: GithubPullRequestDetailedWithHtml) {
     detailsPanel.details = result
-    if (!result.merged && result.mergeable == null) {
+    if (!result.merged && result.state == GithubIssueState.open && result.mergeable == null) {
       ApplicationManager.getApplication().invokeLater {
         dataLoader.reloadDetails(result.number)
       }

@@ -18,8 +18,8 @@ import org.jetbrains.plugins.gradle.service.settings.GradleSettingsService;
 @State(name = "DefaultGradleProjectSettings", storages = @Storage(StoragePathMacros.WORKSPACE_FILE))
 public class DefaultGradleProjectSettings implements PersistentStateComponent<DefaultGradleProjectSettings.MyState> {
   private boolean myMigrated;
-  private boolean myDelegatedBuild;
-  @NotNull private TestRunner myTestRunner = TestRunner.PLATFORM;
+  private boolean myDelegatedBuild = true;
+  @NotNull private TestRunner myTestRunner = TestRunner.GRADLE;
 
   @NotNull
   public TestRunner getTestRunner() {
@@ -91,9 +91,17 @@ public class DefaultGradleProjectSettings implements PersistentStateComponent<De
     return ServiceManager.getService(project, DefaultGradleProjectSettings.class);
   }
 
-  static class MyState {
+  /**
+   * Do not use the class directly. Consider to use {@link GradleSettingsService} or {@link GradleProjectSettings}
+   */
+  @ApiStatus.Experimental
+  public static class MyState {
     public TestRunner testRunner = TestRunner.PLATFORM;
     public boolean delegatedBuild;
+    /**
+     * @deprecated Do not use. Only for settings migration purposes.
+     */
+    @Deprecated
     @ApiStatus.ScheduledForRemoval(inVersion = "2019.2")
     public boolean isMigrated;
   }

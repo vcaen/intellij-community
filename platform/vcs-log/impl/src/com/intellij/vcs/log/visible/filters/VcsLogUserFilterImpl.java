@@ -28,7 +28,7 @@ public class VcsLogUserFilterImpl implements VcsLogUserFilter {
 
   VcsLogUserFilterImpl(@NotNull Collection<String> users,
                        @NotNull Map<VirtualFile, VcsUser> meData,
-                       @NotNull Set<VcsUser> allUsers) {
+                       @NotNull Set<? extends VcsUser> allUsers) {
     myUsers = users;
     myData = meData;
 
@@ -109,6 +109,12 @@ public class VcsLogUserFilterImpl implements VcsLogUserFilter {
     result.addAll(myAllUsersByEmails.get(VcsUserUtil.getNameInStandardForm(name)));
 
     return result;
+  }
+
+  @NotNull
+  @Override
+  public String getPresentation() {
+    return StringUtil.join(getUserNamesForPresentation(), ", ");
   }
 
   @Override

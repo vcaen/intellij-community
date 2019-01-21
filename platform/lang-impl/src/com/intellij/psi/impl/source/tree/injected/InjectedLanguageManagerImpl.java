@@ -128,6 +128,12 @@ public class InjectedLanguageManagerImpl extends InjectedLanguageManager impleme
     return documentWindow == null ? offset : documentWindow.injectedToHost(offset);
   }
 
+  @Override
+  public int injectedToHost(@NotNull PsiElement injectedContext, int injectedOffset, boolean minHostOffset) {
+    DocumentWindow documentWindow = getDocumentWindow(injectedContext);
+    return documentWindow == null ? injectedOffset : documentWindow.injectedToHost(injectedOffset, minHostOffset);
+  }
+
   private static DocumentWindow getDocumentWindow(@NotNull PsiElement element) {
     PsiFile file = element.getContainingFile();
     if (file == null) return null;
@@ -404,18 +410,24 @@ public class InjectedLanguageManagerImpl extends InjectedLanguageManager impleme
   interface InjProcessor {
     boolean process(@NotNull PsiElement element, @NotNull MultiHostInjector injector);
   }
-  void processInPlaceInjectorsFor(@NotNull PsiElement element, @NotNull InjProcessor processor) {
-    MultiHostInjector[] infos = getInjectorMap().get(element.getClass());
-    if (infos != null) {
-      final boolean dumb = myDumbService.isDumb();
-      for (MultiHostInjector injector : infos) {
-        if (dumb && !DumbService.isDumbAware(injector)) {
-          continue;
-        }
 
-        if (!processor.process(element, injector)) return;
-      }
+  InjectionResult processInPlaceInjectorsFor(@NotNull PsiFile hostPsiFile, @NotNull PsiElement element) {
+    MultiHostInjector[] infos = getInjectorMap().get(element.getClass());
+    if (infos == null || infos.length == 0) {
+      return null;
     }
+    final boolean dumb = myDumbService.isDumb();
+    InjectionRegistrarImpl hostRegistrar = new InjectionRegistrarImpl(myProject, hostPsiFile, element, myDocManager);
+    for (MultiHostInjector injector : infos) {
+      if (dumb && !DumbService.isDumbAware(injector)) {
+        continue;
+      }
+
+      injector.getLanguagesToInject(hostRegistrar, element);
+      InjectionResult result = hostRegistrar.getInjectedResult();
+      if (result != null) return result;
+    }
+    return null;
   }
 
   @Override
